@@ -1,0 +1,34 @@
+Verificação: 16/10/2026 12:04
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/runner/work/claude/claude/instagram/publisher/__main__.py", line 192, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/runner/work/claude/claude/instagram/publisher/__main__.py", line 188, in main
+    return a.fn(a)
+           ^^^^^^^
+  File "/home/runner/work/claude/claude/instagram/publisher/__main__.py", line 151, in cmd_conta
+    me = cli.me()
+         ^^^^^^^^
+  File "/home/runner/work/claude/claude/instagram/publisher/instagram.py", line 101, in me
+    return self._call("GET", "me", fields="user_id,username,account_type")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/claude/claude/instagram/publisher/instagram.py", line 50, in _call
+    raise InstagramError(f"{method} {path} falhou ({r.status_code}): {msg}")
+Resultado conta: 1
+
+## Publicação — 16/10/2026 12:04
+
+- (simulação) 2026-10-21-checklist-do-estatuto: carrossel, 9 arquivo(s)
+    https://raw.githubusercontent.com/diniltonpereira/claude/9e4f8bbd8f7945fa208d637af243393b59c8f19b/instagram/posts/2026-10-21-checklist-do-estatuto/slide01.jpg
+
+19/10 12:00  reel      2026-10-19-roi-da-isencao                aguardando_video
+21/10 12:00  carrossel 2026-10-21-checklist-do-estatuto         agendado
+23/10 12:00  reel      2026-10-23-voluntariado-remunerado       aguardando_video
+26/10 12:00  reel      2026-10-26-conselho-fiscal-de-parentes   aguardando_video
+27/10 12:00  carrossel 2026-10-27-centro-de-custos              agendado
+28/10 19:00  carrossel 2026-10-28-acordao-tcu-2821-2024         agendado
+29/10 12:00  reel      2026-10-29-tema-32-stf                   aguardando_video
+30/10 12:00  reel      2026-10-30-bastidor-60-instituicoes      aguardando_video
