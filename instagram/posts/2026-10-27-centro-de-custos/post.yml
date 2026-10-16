@@ -1,0 +1,17 @@
+titulo: "Centro de custos"
+tipo: carrossel            # imagem | carrossel | reel
+status: agendado   # rascunho | agendado | aguardando_video
+publicar_em: "2026-10-27T12:00:00-03:00"
+midia:
+  - slide01.jpg
+  - slide02.jpg
+  - slide03.jpg
+  - slide04.jpg
+  - slide05.jpg
+  - slide06.jpg
+  - slide07.jpg
+legenda: |
+  A solução para o caos financeiro nunca é só captar mais. É garantir que cada real tenha trilha de evidência. Salve para mostrar à sua diretoria.
+
+  Livro completo: diniltonpereira.com.br/livros (link na bio).
+hashtags: [terceirosetor, centrodecustos, prestacaodecontas, OSC, MROSC]

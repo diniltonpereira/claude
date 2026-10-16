@@ -1,0 +1,68 @@
+name: Publicar no Instagram
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"        # a cada 30 min (o GitHub pode atrasar alguns minutos)
+  push:
+    branches: [main]
+    paths: ["instagram/posts/**"] # post novo enviado pelo Claude entra na fila na hora
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "Publicar este post agora (nome da pasta em instagram/posts/). Vazio = fila normal."
+        required: false
+      simular:
+        description: "Só simular, sem publicar"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar-instagram
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: instagram
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: instagram/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Publicar posts vencidos
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          MEDIA_BASE_URL: ${{ vars.MEDIA_BASE_URL }}
+          SLUG: ${{ inputs.slug }}
+          SIMULAR: ${{ inputs.simular }}
+        run: |
+          ARGS=()
+          if [ -n "$SLUG" ]; then ARGS+=(--slug "$SLUG"); fi
+          if [ "$SIMULAR" = "true" ]; then ARGS+=(--simular); fi
+          python -m publisher publicar "${ARGS[@]}"
+
+      - name: Registrar o que foi publicado
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain state/)" ]; then
+            git config user.name "publicador-instagram"
+            git config user.email "publicador@users.noreply.github.com"
+            git add state/
+            git commit -m "Registra publicação no Instagram [skip ci]"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi

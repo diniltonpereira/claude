@@ -1,0 +1,12 @@
+titulo: "Tema 32 do STF"
+tipo: reel            # imagem | carrossel | reel
+status: aguardando_video   # rascunho | agendado | aguardando_video
+publicar_em: "2026-10-29T12:00:00-03:00"
+midia:
+  - video.mp4
+# capa: capa.jpg     # opcional, só para Reel
+legenda: |
+  O Tema 32 é escudo, não salvo-conduto. No livro, explico como usar essa jurisprudência na defesa da entidade.
+
+  Livro completo: diniltonpereira.com.br/livros (link na bio).
+hashtags: [terceirosetor, STF, imunidadetributaria, LC187, OSC]

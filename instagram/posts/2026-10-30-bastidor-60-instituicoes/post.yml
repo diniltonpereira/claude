@@ -1,0 +1,13 @@
+titulo: "Bastidor: mais de 60 instituições"
+tipo: reel            # imagem | carrossel | reel
+status: aguardando_video   # rascunho | agendado | aguardando_video
+publicar_em: "2026-10-30T12:00:00-03:00"
+midia:
+  - video.mp4
+# capa: capa.jpg     # opcional, só para Reel
+legenda: |
+  Amadorismo é escolha, não destino. Gestão Jurídica e Estratégica do Terceiro Setor: A Teoria da Trincheira e a Engenharia da Eficiência.
+
+  Livro completo: diniltonpereira.com.br/livros (link na bio).
+  Dúvidas sobre o livro: WhatsApp (38) 99902-7278.
+hashtags: [terceirosetor, livro, gestaosocial, OSC, autornacional]

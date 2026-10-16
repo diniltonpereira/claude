@@ -1,0 +1,12 @@
+titulo: "Voluntariado remunerado"
+tipo: reel            # imagem | carrossel | reel
+status: aguardando_video   # rascunho | agendado | aguardando_video
+publicar_em: "2026-10-23T12:00:00-03:00"
+midia:
+  - video.mp4
+# capa: capa.jpg     # opcional, só para Reel
+legenda: |
+  A nobreza da causa não afasta a CLT. No livro, conto o caso e o Saneamento Documental Preventivo que aplicamos.
+
+  Livro completo: diniltonpereira.com.br/livros (link na bio).
+hashtags: [terceirosetor, voluntariado, direitodotrabalho, OSC, gestaosocial]

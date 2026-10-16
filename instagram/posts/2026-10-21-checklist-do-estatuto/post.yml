@@ -1,0 +1,19 @@
+titulo: "Checklist do estatuto"
+tipo: carrossel            # imagem | carrossel | reel
+status: agendado   # rascunho | agendado | aguardando_video
+publicar_em: "2026-10-21T12:00:00-03:00"
+midia:
+  - slide01.jpg
+  - slide02.jpg
+  - slide03.jpg
+  - slide04.jpg
+  - slide05.jpg
+  - slide06.jpg
+  - slide07.jpg
+  - slide08.jpg
+  - slide09.jpg
+legenda: |
+  Em quase 80% das entidades que acompanhei, o estatuto nasceu de um modelo baixado da internet. Salve este checklist e confira o seu. Os checklists completos de governança e documentação estão no livro.
+
+  Livro completo: diniltonpereira.com.br/livros (link na bio).
+hashtags: [terceirosetor, estatutosocial, OSC, LC187, governanca]

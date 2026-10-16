@@ -1,0 +1,12 @@
+titulo: "O ROI da isenção"
+tipo: reel            # imagem | carrossel | reel
+status: aguardando_video   # rascunho | agendado | aguardando_video
+publicar_em: "2026-10-19T12:00:00-03:00"
+midia:
+  - video.mp4
+# capa: capa.jpg     # opcional, só para Reel
+legenda: |
+  Compliance não é custo, é margem social. No capítulo "O ROI da Isenção", mostro a conta completa e o que acontece quando a entidade perde o benefício. Valores do vídeo: exemplo hipotético.
+
+  Livro completo: diniltonpereira.com.br/livros (link na bio).
+hashtags: [terceirosetor, CEBAS, OSC, gestaosocial, compliance]

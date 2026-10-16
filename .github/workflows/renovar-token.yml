@@ -1,0 +1,33 @@
+name: Renovar token do Instagram
+
+# O token de longa duração vale 60 dias. Renovamos nos dias 1 e 20 de cada mês.
+on:
+  schedule:
+    - cron: "17 12 1,20 * *"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: instagram
+
+jobs:
+  renovar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+
+      - name: Pedir token novo à Meta
+        id: novo
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: python -m publisher renovar-token
+
+      - name: Gravar o token novo no segredo do repositório
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          NOVO_TOKEN: ${{ steps.novo.outputs.token }}
+        run: gh secret set IG_ACCESS_TOKEN --body "$NOVO_TOKEN" --repo "$GITHUB_REPOSITORY"

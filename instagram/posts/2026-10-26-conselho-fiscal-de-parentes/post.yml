@@ -1,0 +1,12 @@
+titulo: "Conselho fiscal de parentes"
+tipo: reel            # imagem | carrossel | reel
+status: aguardando_video   # rascunho | agendado | aguardando_video
+publicar_em: "2026-10-26T12:00:00-03:00"
+midia:
+  - video.mp4
+# capa: capa.jpg     # opcional, só para Reel
+legenda: |
+  Quem fiscaliza não pode ser da família de quem é fiscalizado. Esse e outros casos reais, sem identificação das entidades, estão no livro.
+
+  Livro completo: diniltonpereira.com.br/livros (link na bio).
+hashtags: [terceirosetor, CEBAS, conselhofiscal, governanca, OSC]
