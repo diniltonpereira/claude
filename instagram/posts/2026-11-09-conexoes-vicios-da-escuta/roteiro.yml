@@ -1,0 +1,27 @@
+etiqueta: Faltam 3 dias
+livro: Conexões que Transformam
+capa:
+  titulo: 5 vícios que estragam a escuta de gente bem-intencionada
+  subtitulo: Nenhum deles é grosseria. Todos tiram o foco de quem fala.
+slides:
+- numero: '01'
+  titulo: O conselheiro apressado
+  texto: 'Antes de entender o problema, já oferece a solução: "faz assim que resolve".'
+- numero: '02'
+  titulo: O consolador automático
+  texto: 'Minimiza o que o outro sente: "isso não é nada, vai passar".'
+- numero: '03'
+  titulo: O investigador
+  texto: Transforma a conversa num interrogatório de detalhes que só interessam a ele.
+- numero: '04'
+  titulo: O competidor
+  texto: Sempre tem uma história maior, um problema pior, uma experiência mais impressionante.
+- numero: '05'
+  titulo: O corretor
+  texto: 'Fica atento a cada imprecisão para corrigi-la: "não foi na terça, foi na quarta".'
+- chamada: A SAÍDA
+  titulo: Uma pergunta simples
+  texto: '"Você quer uma sugestão ou prefere só desabafar?" Ela evita muitos conselhos indesejados.'
+fechamento:
+  titulo: Escuta é técnica, não dom
+  texto: O capítulo 5 mostra os três níveis de escuta e como praticar a escuta ativa.

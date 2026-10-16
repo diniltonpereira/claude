@@ -1,0 +1,22 @@
+etiqueta: Lançamento
+livro: Conexões que Transformam
+capa:
+  imagem: ../../ferramentas/capas/conexoes-que-transformam.jpg
+  titulo: 'Chegou: Conexões que Transformam'
+  subtitulo: Disponível hoje no Kindle
+slides:
+- chamada: PARTE I
+  titulo: O mundo de dentro
+  texto: Autoconhecimento, inteligência emocional e a anatomia da síndrome da autossuficiência, com autoteste.
+- chamada: PARTE II
+  titulo: O encontro
+  texto: 'Escuta, comunicação, conflitos e conversas difíceis: as habilidades do dia a dia.'
+- chamada: PARTE III
+  titulo: O poder e o serviço
+  texto: Autonomia, autoridade, poder e o caráter de quem lidera.
+- chamada: PARTE IV
+  titulo: O nós
+  texto: Equipes, confiança e o caminho de volta para a interdependência.
+fechamento:
+  titulo: Para líderes que acreditam que pessoas importam
+  texto: Gestores, profissionais da saúde, servidores públicos e educadores.

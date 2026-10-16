@@ -8,6 +8,7 @@ O roteiro (YAML) tem este formato:
   etiqueta: "Checklist de governança"      # texto pequeno no alto de cada slide
   livro: "Gestão Jurídica e Estratégica do Terceiro Setor"   # opcional (padrão abaixo)
   capa:
+    # imagem: capa-livro.png   # opcional: mostra a capa do livro (caminho relativo ao roteiro)
     titulo: "Diretoria com mandato vencido não assina contrato válido"
     subtitulo: "7 perguntas para conferir a governança da sua OSC."
   slides:                                   # 1 a 8 slides de conteúdo
@@ -94,6 +95,27 @@ def capa(n, total, tag, titulo, sub):
     return im
 
 
+def capa_com_imagem(n, total, tag, imagem: Path, titulo, sub):
+    """Capa com a imagem do livro centralizada, título e subtítulo embaixo."""
+    im, d = base(n, total, tag)
+    livro = Image.open(imagem).convert("RGB")
+    alvo_h = 720
+    livro = livro.resize((int(livro.width * alvo_h / livro.height), alvo_h), Image.LANCZOS)
+    x = (W - livro.width) // 2
+    d.rectangle([x + 14, 150 + 14, x + livro.width + 14, 150 + alvo_h + 14], fill=(10, 18, 36))
+    im.paste(livro, (x, 150))
+    y = 150 + alvo_h + 55
+    tf = f(SERIF_B, 58)
+    for ln in wrap(d, titulo, tf, W - 2 * M):
+        d.text(((W - d.textlength(ln, font=tf)) // 2, y), ln, font=tf, fill=CREAM)
+        y += int(58 * 1.15)
+    sf = f(SANS_M, 34)
+    for ln in wrap(d, sub, sf, W - 2 * M):
+        d.text(((W - d.textlength(ln, font=sf)) // 2, y + 14), ln, font=sf, fill=GOLD)
+        y += int(34 * 1.35)
+    return im
+
+
 def conteudo(n, total, tag, chamada, titulo, texto, numero=None):
     im, d = base(n, total, tag)
     tf, bf = f(SERIF_B, 76), f(SANS, 46)
@@ -139,7 +161,14 @@ def gerar(roteiro: dict, destino: Path) -> list[str]:
     if not 1 <= len(slides) <= 8:
         raise ValueError("Use de 1 a 8 slides de conteúdo (o carrossel tem no máximo 10 itens).")
     total = len(slides) + 2
-    imgs = [capa(1, total, tag, roteiro["capa"]["titulo"], roteiro["capa"].get("subtitulo", ""))]
+    c = roteiro["capa"]
+    if c.get("imagem"):
+        img = Path(c["imagem"])
+        if not img.is_absolute():
+            img = Path(roteiro.get("_base", ".")) / img
+        imgs = [capa_com_imagem(1, total, tag, img, c["titulo"], c.get("subtitulo", ""))]
+    else:
+        imgs = [capa(1, total, tag, c["titulo"], c.get("subtitulo", ""))]
     for i, s in enumerate(slides, 2):
         imgs.append(conteudo(i, total, tag, s.get("chamada"), s["titulo"], s["texto"], s.get("numero")))
     fc = roteiro["fechamento"]
@@ -159,5 +188,6 @@ if __name__ == "__main__":
         print(__doc__)
         sys.exit(1)
     roteiro = yaml.safe_load(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    roteiro["_base"] = str(Path(sys.argv[1]).resolve().parent)
     nomes = gerar(roteiro, Path(sys.argv[2]))
     print("\n".join(f"  - {n}" for n in nomes))

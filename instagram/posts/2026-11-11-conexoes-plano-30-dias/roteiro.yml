@@ -1,0 +1,21 @@
+etiqueta: 'Amanhã: lançamento'
+livro: Conexões que Transformam
+capa:
+  titulo: Um plano de 30 dias para parar de carregar tudo sozinho
+  subtitulo: Da autossuficiência à interdependência, uma semana de cada vez.
+slides:
+- chamada: SEMANA 1
+  titulo: Perceber
+  texto: Escolha os três comportamentos em que você mais se reconhece. Só observe quando aparecem e anote no fim do dia.
+- chamada: SEMANA 2
+  titulo: Pedir
+  texto: Peça ajuda a três pessoas, com pedidos específicos. Agradeça contando como a ajuda foi útil.
+- chamada: SEMANA 3
+  titulo: Compartilhar
+  texto: Ensine algo que só você domina. Delegue uma tarefa inteira, sem refazê-la depois.
+- chamada: SEMANA 4
+  titulo: Ouvir
+  texto: 'Pergunte a duas pessoas: "O que eu poderia fazer diferente para trabalharmos melhor juntos?" Ouça até o fim. Não se justifique.'
+fechamento:
+  titulo: Amanhã, 12/11, o livro chega
+  texto: O caminho de volta não é uma viagem com data de chegada; é uma forma de caminhar.

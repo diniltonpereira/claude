@@ -1,0 +1,27 @@
+etiqueta: Faltam 10 dias
+livro: Conexões que Transformam
+capa:
+  titulo: 6 sinais de que você virou o profissional que não precisa de ninguém
+  subtitulo: E por que isso cansa você e enfraquece a equipe.
+slides:
+- numero: '01'
+  titulo: Não pede ajuda
+  texto: Prefere passar horas preso num problema a perguntar a um colega.
+- numero: '02'
+  titulo: Não delega
+  texto: Tudo precisa passar por você, e o que outros fazem quase sempre é refeito.
+- numero: '03'
+  titulo: Guarda informação
+  texto: Dados, contatos e procedimentos ficam concentrados nas suas mãos.
+- numero: '04'
+  titulo: Resiste ao feedback
+  texto: Críticas soam como ataque e são respondidas com justificativas.
+- numero: '05'
+  titulo: Despreza sem perceber
+  texto: O trabalho dos outros é sempre "bom, mas…".
+- numero: '06'
+  titulo: Exibe o cansaço como virtude
+  texto: A falta de descanso vira prova de comprometimento.
+fechamento:
+  titulo: Reconheceu algum?
+  texto: O livro traz um autoteste de 20 itens e um caminho de volta, em 30 dias.
