@@ -1,3 +1,3 @@
-Teste do GH_PAT: 16/10/2026 12:39
+Teste do GH_PAT: 16/10/2026 14:27
 failed to fetch public key: HTTP 403: Resource not accessible by personal access token (https://api.github.com/repos/diniltonpereira/claude/actions/secrets/public-key)
 failed to delete secret TESTE_GH_PAT: HTTP 403: Resource not accessible by personal access token (https://api.github.com/repos/diniltonpereira/claude/actions/secrets/TESTE_GH_PAT)
