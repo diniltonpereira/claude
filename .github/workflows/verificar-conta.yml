@@ -36,7 +36,7 @@ jobs:
           {
             echo "Verificação: $(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M')"
             echo
-            python -m publisher conta 2>&1 | grep -v -i token
+            python -m publisher conta 2>&1 | tail -3 | sed -E 's/IG[A-Za-z0-9_-]{20,}/[TOKEN OCULTO]/g'
             echo "Resultado conta: ${PIPESTATUS[0]}"
             echo
             python -m publisher publicar --slug 2026-10-21-checklist-do-estatuto --simular 2>&1 | head -4
