@@ -1,0 +1,38 @@
+name: Testar GH_PAT
+
+# Confere se o GH_PAT consegue gravar segredos (o que a renovação do token precisa).
+# Grava e apaga um segredo de teste; não mexe no token do Instagram.
+on:
+  push:
+    branches: [main]
+    paths: ["instagram/testar-pat.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gravar e apagar segredo de teste
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set +e
+          {
+            echo "Teste do GH_PAT: $(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M')"
+            if [ -z "$GH_TOKEN" ]; then echo "GH_PAT não encontrado nos segredos."; exit 0; fi
+            gh secret set TESTE_GH_PAT --body ok --repo "$GITHUB_REPOSITORY" 2>&1 && echo "Gravar segredo: OK"
+            gh secret delete TESTE_GH_PAT --repo "$GITHUB_REPOSITORY" 2>&1 && echo "Apagar segredo: OK"
+          } > instagram/state/teste-gh-pat.txt
+          cat instagram/state/teste-gh-pat.txt
+      - name: Registrar resultado
+        run: |
+          git config user.name "publicador-instagram"
+          git config user.email "publicador@users.noreply.github.com"
+          git add instagram/state/teste-gh-pat.txt
+          git commit -m "Resultado do teste do GH_PAT [skip ci]" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
