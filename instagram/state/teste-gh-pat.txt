@@ -1,9 +1,9 @@
-Teste do GH_PAT: 16/10/2026 14:35
+Teste do GH_PAT: 16/10/2026 14:47
 Diagnóstico: acesso ao repositório
 repo visível: diniltonpereira/claude
 Diagnóstico: permissão exigida para segredos
-HTTP/2.0 403 Forbidden
+HTTP/2.0 200 OK
 Github-Authentication-Token-Expiration: 2027-01-14 15:35:59 UTC
 X-Accepted-Github-Permissions: secrets=read
-failed to fetch public key: HTTP 403: Resource not accessible by personal access token (https://api.github.com/repos/diniltonpereira/claude/actions/secrets/public-key)
-failed to delete secret TESTE_GH_PAT: HTTP 403: Resource not accessible by personal access token (https://api.github.com/repos/diniltonpereira/claude/actions/secrets/TESTE_GH_PAT)
+Gravar segredo: OK
+Apagar segredo: OK
