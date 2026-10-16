@@ -24,6 +24,10 @@ jobs:
           {
             echo "Teste do GH_PAT: $(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M')"
             if [ -z "$GH_TOKEN" ]; then echo "GH_PAT não encontrado nos segredos."; exit 0; fi
+            echo "Diagnóstico: acesso ao repositório"
+            gh api "repos/$GITHUB_REPOSITORY" --jq '"repo visível: " + .full_name' 2>&1
+            echo "Diagnóstico: permissão exigida para segredos"
+            gh api -i "repos/$GITHUB_REPOSITORY/actions/secrets/public-key" 2>&1 | grep -i -E "^HTTP|x-accepted-github-permissions|github-authentication-token-expiration" 
             gh secret set TESTE_GH_PAT --body ok --repo "$GITHUB_REPOSITORY" 2>&1 && echo "Gravar segredo: OK"
             gh secret delete TESTE_GH_PAT --repo "$GITHUB_REPOSITORY" 2>&1 && echo "Apagar segredo: OK"
           } > instagram/state/teste-gh-pat.txt
