@@ -1,0 +1,3 @@
+Fontes redistribuídas com o gerador de carrosséis:
+- Inter (SIL Open Font License 1.1) — https://rsms.me/inter/
+- TeX Gyre Pagella (GUST Font License) — https://www.gust.org.pl/projects/e-foundry/tex-gyre
