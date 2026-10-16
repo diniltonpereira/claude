@@ -1,14 +1,13 @@
-Verificação: 16/10/2026 12:05
+Verificação: 16/10/2026 12:14
 
-  File "/home/runner/work/claude/claude/instagram/publisher/instagram.py", line 50, in _call
-    raise InstagramError(f"{method} {path} falhou ({r.status_code}): {msg}")
-publisher.instagram.InstagramError: GET me falhou (400): Invalid OAuth access token - Cannot parse access token
-Resultado conta: 1
+Conta: @diniltonpereira (MEDIA_CREATOR), id 17841402416082706
+Publicações nas últimas 24 h: 0 de 100
+Resultado conta: 0
 
-## Publicação — 16/10/2026 12:05
+## Publicação — 16/10/2026 12:14
 
 - (simulação) 2026-10-21-checklist-do-estatuto: carrossel, 9 arquivo(s)
-    https://raw.githubusercontent.com/diniltonpereira/claude/ec6c4391cba35b0e081ffb7501e3b5a14bec49b1/instagram/posts/2026-10-21-checklist-do-estatuto/slide01.jpg
+    https://raw.githubusercontent.com/diniltonpereira/claude/123d0d4854b8ad61a71cc0d1cc8162591591ba98/instagram/posts/2026-10-21-checklist-do-estatuto/slide01.jpg
 
 19/10 12:00  reel      2026-10-19-roi-da-isencao                aguardando_video
 21/10 12:00  carrossel 2026-10-21-checklist-do-estatuto         agendado
