@@ -1,0 +1,35 @@
+etiqueta: Caminho da Restauração
+livro: Caminho da Restauração
+capa:
+  imagem: ../../ferramentas/capas/caminho-da-restauracao.jpg
+  titulo: Os 8 passos da restauração pessoal
+  subtitulo: Cada passo ligado a uma Bem-aventurança de Jesus.
+slides:
+# Fonte: Livro completo (edição 6x9), páginas indicadas em cada slide.
+- chamada: PASSO 1 · POBRES EM ESPÍRITO
+  titulo: Compreender que eu não sou Deus
+  texto: "O primeiro degrau da restauração é sempre para baixo: reconhecer que, sozinhos, não damos conta."   # p. 15
+- chamada: PASSO 2 · OS QUE CHORAM
+  titulo: Onde receber ajuda
+  texto: Deus conhece a sua situação, se importa de verdade e tem poder para transformar você e o que você vive.   # p. 17-18
+- chamada: PASSO 3 · OS MANSOS
+  titulo: Entregar o controle a Cristo
+  texto: "Uma decisão, não um sentimento: atravessar a linha, e não apenas admirá-la à distância."   # p. 21
+- chamada: PASSO 4 · PUROS DE CORAÇÃO
+  titulo: Tornando-me limpo
+  texto: Confessar a Deus e a alguém de confiança. O perdão de Deus é instantâneo, gratuito e completo.   # p. 24
+- chamada: PASSO 5 · FOME E SEDE DE JUSTIÇA
+  titulo: Fazendo mudanças
+  texto: Deus não ama você mais quando você melhora, nem menos quando falha. Um dia de cada vez.   # p. 27-28
+- chamada: PASSO 6 · MISERICORDIOSOS
+  titulo: Restaurando relacionamentos
+  texto: O ressentimento nunca pune quem magoou; apenas envenena quem insiste em carregá-lo.   # p. 29
+- chamada: PASSO 7 · TODOS OS DIAS
+  titulo: Mantendo o ímpeto
+  texto: Avaliação, meditação e oração sustentam o caminho quando o entusiasmo inicial já passou.   # p. 33
+- chamada: PASSO 8 · 1 PEDRO 3.15
+  titulo: Reciclando a minha dor
+  texto: Sua história pode ser o mapa de que outra pessoa precisa para encontrar o caminho de volta.   # p. 39
+fechamento:
+  titulo: Nenhuma dor precisa ser desperdiçada.
+  texto: "Oferta de lançamento: R$ 49,90 com frete grátis nas primeiras 200 unidades. Com perguntas de reflexão, orações e guia para grupos."
