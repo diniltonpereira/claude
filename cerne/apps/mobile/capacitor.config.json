@@ -1,0 +1,14 @@
+{
+  "appId": "br.com.cerne.painel",
+  "appName": "Cerne",
+  "webDir": "www",
+  "backgroundColor": "#0A1B33",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}

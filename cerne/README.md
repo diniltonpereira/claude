@@ -15,6 +15,7 @@ encadeada por hash**, com relatório de evidências em PDF.
 | **API** | [`api/`](api/) | FastAPI + SQLAlchemy + Postgres (Alembic). Separação, trilha, relatórios, chaves, credenciais de ERP cifradas. |
 | **Painel do provedor** | [`painel/`](painel/) | Aplicativo web instalável (PWA) servido no mesmo domínio: catálogo, ativações, faturas, auditoria, tributos, relatório PDF, chaves e integração. Inclui a área de administração (cadastro de provedores). |
 | **Worker de sincronização** | [`api/app/sync.py`](api/app/sync.py) | Lê faturas do Hubsoft (somente leitura) e separa automaticamente. Roda como serviço opcional (`--profile sync`). |
+| **Aplicativos Android, iOS e Windows** | [`apps/`](apps/) | O mesmo painel empacotado com Capacitor (Play Store / App Store) e Electron (instalador Windows). Guia de publicação em `apps/README.md`. |
 | **Infraestrutura da VPS** | [`deploy/`](deploy/) | Docker Compose (Postgres, API, Caddy com HTTPS automático, backup diário), provisionamento do servidor, deploy com rollback. |
 
 Também: [`marca/`](marca/) (identidade visual, PNG/ICO exportados) e [`docs/`](docs/) (guia do programador e relatório modelo).

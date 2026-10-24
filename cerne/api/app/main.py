@@ -5,6 +5,7 @@ import time
 import uuid
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -24,6 +25,13 @@ app = FastAPI(
     title="Cerne API · Separação e Comprovação SCM × SVA", version=__version__,
     docs_url="/docs" if settings.docs_enabled else None,
     redoc_url=None, openapi_url="/openapi.json" if settings.docs_enabled else None,
+)
+
+app.add_middleware(
+    CORSMiddleware, allow_origins=list(settings.cors_origins), allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["X-API-Key", "X-Admin-Token", "Content-Type", "Accept"],
+    expose_headers=["X-Report-Id", "Content-Disposition", "X-Request-Id"], max_age=600,
 )
 
 

@@ -1,0 +1,11 @@
+Cerne · Painel do provedor
+
+Este programa dá acesso ao painel da Cerne, ferramenta de apoio ao registro, à separação e à
+comprovação SCM × SVA. Ela não decide nem garante a classificação de serviços, nem qualquer
+tratamento tributário; a classificação e o enquadramento fiscal são responsabilidade do provedor,
+validados por profissional habilitado.
+
+O acesso exige o endereço do servidor e uma chave de API fornecidos pelo administrador.
+Os dados tratados seguem o termo firmado com o provedor e a LGPD.
+
+Fonte Jost: SIL Open Font License 1.1.

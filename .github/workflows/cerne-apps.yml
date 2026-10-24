@@ -1,0 +1,103 @@
+name: Cerne · Aplicativos (Android, iOS, Windows)
+
+# Gera os instaladores a partir do painel (cerne/painel):
+#   Android: APK de teste (debug) e, com os segredos de assinatura, APK + AAB de release para a Play Store
+#   iOS:     compilação para o simulador (valida o projeto); o envio à App Store é feito pelo Xcode num Mac
+#   Windows: instalador Cerne-Setup-<versão>.exe
+# Os arquivos ficam em "Artifacts" na página da execução.
+#
+# Segredos opcionais (assinatura Android): ANDROID_KEYSTORE_BASE64 (base64 do .jks), ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+on:
+  workflow_dispatch:
+  push:
+    paths: ["cerne/apps/**", "cerne/painel/**", ".github/workflows/cerne-apps.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cerne/apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cerne/apps/mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run painel && npx cap sync android
+      - name: APK de teste (debug)
+        working-directory: cerne/apps/mobile/android
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
+      - name: Release assinado (Play Store)
+        working-directory: cerne/apps/mobile/android
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          CERNE_STOREPASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CERNE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CERNE_KEYPASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ]; then echo "Sem segredos de assinatura: pulando release."; exit 0; fi
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export CERNE_STOREFILE="$RUNNER_TEMP/upload.jks"
+          ./gradlew --no-daemon assembleRelease bundleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cerne-android
+          path: |
+            cerne/apps/mobile/android/app/build/outputs/apk/**/*.apk
+            cerne/apps/mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: cerne/apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cerne/apps/mobile/package-lock.json
+      - name: Xcode mais recente
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$X" && xcodebuild -version
+      - run: npm ci
+      - run: npm run painel && npx cap sync ios
+      - name: Compilar para o simulador (sem assinatura)
+        working-directory: cerne/apps/mobile/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -20
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: cerne/apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cerne/apps/desktop/package-lock.json
+      - run: npm ci
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cerne-windows
+          path: cerne/apps/desktop/dist/*.exe
+          if-no-files-found: error

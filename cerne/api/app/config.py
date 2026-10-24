@@ -11,6 +11,10 @@ def _bool(name: str, default: bool) -> bool:
     return default if v is None else v.strip().lower() in ("1", "true", "sim", "yes", "on")
 
 
+# Android (Capacitor) serve o app em https://localhost, iOS em capacitor://localhost, Windows (Electron) em app://cerne
+DEFAULT_CORS = "https://localhost,capacitor://localhost,app://cerne"
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -20,6 +24,7 @@ class Settings:
     auto_create_schema: bool      # só para desenvolvimento/testes; produção usa Alembic
     docs_enabled: bool
     log_level: str
+    cors_origins: tuple[str, ...]  # origens dos aplicativos (Capacitor/Electron) que chamam a API
 
 
 @lru_cache
@@ -33,4 +38,5 @@ def get_settings() -> Settings:
         auto_create_schema=_bool("AUTO_CREATE_SCHEMA", url.startswith("sqlite")),
         docs_enabled=_bool("DOCS_ENABLED", True),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        cors_origins=tuple(o.strip() for o in os.getenv("CORS_ORIGINS", DEFAULT_CORS).split(",") if o.strip()),
     )

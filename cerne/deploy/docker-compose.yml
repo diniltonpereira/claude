@@ -13,6 +13,7 @@ x-api-env: &api-env
   RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-240}
   DOCS_ENABLED: ${DOCS_ENABLED:-true}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost,capacitor://localhost,app://cerne}
   AUTO_CREATE_SCHEMA: "false"
   TZ: America/Sao_Paulo
 

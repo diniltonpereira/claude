@@ -75,6 +75,29 @@ const store = {
 };
 let memKey = null;
 let adminToken = null;
+
+// Nos aplicativos (Android/iOS via Capacitor, Windows via Electron) o painel roda empacotado e a API
+// fica em outro endereço, informado no login. No navegador, API e painel estão no mesmo domínio.
+const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const IS_APP = IS_NATIVE || !!window.cerneDesktop;
+const server = {
+  get url() {
+    if (!IS_APP) return "";
+    try { return localStorage.getItem("cerne.server") || ""; } catch { return ""; }
+  },
+  set(url) { try { localStorage.setItem("cerne.server", url); } catch { /* */ } },
+};
+
+/** Normaliza o endereço digitado; exige https (http só para testes em localhost). */
+function normalizeServer(raw) {
+  let v = (raw || "").trim().replace(/\/+$/, "");
+  if (v && !/^[a-z]+:\/\//i.test(v)) v = "https://" + v;
+  let u;
+  try { u = new URL(v); } catch { return null; }
+  const local = ["localhost", "127.0.0.1"].includes(u.hostname);
+  if (u.protocol !== "https:" && !(local && u.protocol === "http:")) return null;
+  return u.origin;
+}
 const state = { me: null, period: previousPeriod() };
 
 class ApiError extends Error {
@@ -104,7 +127,7 @@ async function api(path, { method = "GET", body, admin = false, raw = false } = 
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let r;
   try {
-    r = await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    r = await fetch(server.url + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
   } catch {
     throw new ApiError(0, "Sem conexão com o servidor. Verifique a internet e tente de novo.");
   }
@@ -314,12 +337,27 @@ async function downloadReport() {
   try {
     const r = await api(`/v1/reports/${state.period}/evidence.pdf`, { raw: true });
     const id = r.headers.get("X-Report-Id") || `relatorio-${state.period}`;
-    const url = URL.createObjectURL(await r.blob());
+    const blob = await r.blob();
+    if (IS_NATIVE) { await shareNative(blob, `${id}.pdf`); toast(`Relatório ${id} gerado e registrado na trilha.`); return; }
+    const url = URL.createObjectURL(blob);
     const a = el("a", { href: url, download: `${id}.pdf` });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     toast(`Relatório ${id} gerado e registrado na trilha.`);
   } catch (e) { toast(e.message, true); }
+}
+
+/** Android/iOS: grava o PDF no cache do app e abre a folha de compartilhamento (salvar, e-mail, WhatsApp…). */
+async function shareNative(blob, name) {
+  const { Filesystem, Share } = window.Capacitor.Plugins;
+  const data = await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).split(",")[1]);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
+  const { uri } = await Filesystem.writeFile({ path: name, data, directory: "CACHE" });
+  await Share.share({ title: name, url: uri, dialogTitle: "Salvar ou enviar o relatório" });
 }
 
 // ------------------------------------------------------------------ catálogo
@@ -727,6 +765,19 @@ function show(which) {
   for (const id of ["login", "admin", "app"]) $(`#${id}`).hidden = id !== which;
 }
 
+/** Valida e grava o endereço do servidor digitado no login dos aplicativos. */
+function useServerField() {
+  const url = normalizeServer($("#server-url").value);
+  if (!url) {
+    $("#login-error").textContent = "Informe o endereço do servidor, por exemplo https://cerne.seuprovedor.com.br";
+    $("#server-url").focus();
+    return false;
+  }
+  $("#server-url").value = url;
+  server.set(url);
+  return true;
+}
+
 function logout(msg) {
   store.clear();
   state.me = null;
@@ -748,12 +799,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("hashchange", route);
   $("#menu-btn").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
   $("#logout").addEventListener("click", () => logout());
-  $("#go-admin").addEventListener("click", () => { show("admin"); renderAdminLogin(); });
+  $("#go-admin").addEventListener("click", () => {
+    if (IS_APP && !useServerField()) return;
+    show("admin"); renderAdminLogin();
+  });
   $("#leave-admin").addEventListener("click", () => { adminToken = null; show("login"); });
   $("#login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const key = $("#api-key").value.trim();
     const err = $("#login-error");
+    if (IS_APP && !useServerField()) return;
     if (!key) { err.textContent = "Informe a chave de API."; $("#api-key").focus(); return; }
     store.setKey(key, $("#remember").checked);
     const btn = e.submitter;
@@ -764,10 +819,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     });
   });
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  if (IS_APP) {
+    $("#server-field").hidden = false;
+    $("#server-url").value = server.url;
+  } else if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
 
   memKey = store.key;
-  if (memKey) {
+  if (memKey && (!IS_APP || server.url)) {
     try { await enterApp(); } catch { /* logout() já mostrou o login */ }
   } else show("login");
 });

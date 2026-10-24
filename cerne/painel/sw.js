@@ -1,5 +1,5 @@
 // Cache só da casca estática do painel. Chamadas à API (/v1, /healthz) nunca são armazenadas.
-const CACHE = "cerne-painel-v1";
+const CACHE = "cerne-painel-v2";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest",
                "/assets/simbolo-escuro.svg", "/assets/favicon.svg"];
 

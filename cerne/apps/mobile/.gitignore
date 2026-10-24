@@ -1,0 +1,13 @@
+node_modules/
+www/
+android/app/build/
+android/.gradle/
+android/build/
+android/local.properties
+ios/App/build/
+ios/App/Pods/
+ios/DerivedData/
+*.keystore
+*.jks
+keystore.properties
+.gradle-cache/

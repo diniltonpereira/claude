@@ -1,0 +1,25 @@
+{
+  "name": "cerne-mobile",
+  "version": "0.2.0",
+  "description": "Cerne · Painel do provedor para Android e iOS (Capacitor)",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "painel": "node scripts/copiar-painel.js",
+    "sync": "npm run painel && cap sync",
+    "icones": "capacitor-assets generate --iconBackgroundColor \"#0A1B33\" --iconBackgroundColorDark \"#0A1B33\" --splashBackgroundColor \"#0A1B33\" --splashBackgroundColorDark \"#0A1B33\"",
+    "android": "npm run sync && cap open android",
+    "ios": "npm run sync && cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/filesystem": "8.1.4",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/share": "8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.5.3"
+  }
+}

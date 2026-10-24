@@ -1,0 +1,42 @@
+{
+  "name": "cerne-desktop",
+  "productName": "Cerne",
+  "version": "0.2.0",
+  "description": "Cerne · Painel do provedor (separação e comprovação SCM × SVA)",
+  "author": "Cerne",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "painel": "node scripts/copiar-painel.js",
+    "start": "npm run painel && electron .",
+    "dist:win": "npm run painel && electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "br.com.cerne.painel",
+    "productName": "Cerne",
+    "copyright": "Cerne",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "painel/**/*", "package.json"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "artifactName": "Cerne-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cerne",
+      "installerLanguages": ["pt_BR"],
+      "language": "1046",
+      "license": "build/licenca.txt"
+    }
+  }
+}

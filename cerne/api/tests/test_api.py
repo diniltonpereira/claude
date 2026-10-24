@@ -287,3 +287,15 @@ def test_rate_limit():
     rl = RateLimiter()
     assert all(rl.allow("k", 3) for _ in range(3)) and not rl.allow("k", 3)
     assert rl.allow("outra", 3)
+
+
+def test_cors_so_para_os_aplicativos(client, provider):
+    _, h = provider
+    for origin in ("https://localhost", "capacitor://localhost", "app://cerne"):
+        pre = client.options("/v1/me", headers={"Origin": origin, "Access-Control-Request-Method": "GET",
+                                                "Access-Control-Request-Headers": "x-api-key"})
+        assert pre.status_code == 200 and pre.headers["access-control-allow-origin"] == origin
+        r = client.get("/v1/me", headers={**h, "Origin": origin})
+        assert r.headers["access-control-allow-origin"] == origin
+    r = client.get("/v1/me", headers={**h, "Origin": "https://site-malicioso.example"})
+    assert "access-control-allow-origin" not in r.headers
