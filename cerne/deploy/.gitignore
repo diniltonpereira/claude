@@ -1,0 +1,4 @@
+.env
+backups/
+config/*.json
+!config/*.example.json

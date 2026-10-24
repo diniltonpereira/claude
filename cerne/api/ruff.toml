@@ -1,0 +1,7 @@
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "B"]
+# E70x/E731: estilo compacto já usado no código original; B008: Depends() é o idioma do FastAPI
+ignore = ["E501", "E701", "E702", "E731", "E741", "B008"]

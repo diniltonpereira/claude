@@ -1,0 +1,52 @@
+{
+	email {$ACME_EMAIL}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+{$CERNE_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# Administração: restrinja por IP em ADMIN_ALLOW_IPS (ex.: "203.0.113.10/32")
+	@admin_bloqueado {
+		path /v1/admin/*
+		not remote_ip {$ADMIN_ALLOW_IPS}
+	}
+	respond @admin_bloqueado "Acesso negado" 403
+
+	@api path /v1/* /healthz /docs /docs/* /openapi.json
+	handle @api {
+		request_body {
+			max_size 5MB
+		}
+		reverse_proxy api:8000 {
+			header_up X-Request-Id {http.request.uuid}
+		}
+	}
+
+	handle {
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		root * /srv/painel
+		@sw path /sw.js
+		header @sw Cache-Control "no-cache"
+		@estatico path /assets/*
+		header @estatico Cache-Control "public, max-age=604800"
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

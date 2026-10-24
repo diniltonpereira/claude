@@ -1,0 +1,8 @@
+{
+  "invoice_ref": "id_fatura",
+  "customer_ref": "id_cliente",
+  "items": "itens",
+  "item_service_code": "id_servico",
+  "item_amount": "valor",
+  "item_description": "descricao"
+}

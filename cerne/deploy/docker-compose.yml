@@ -1,0 +1,119 @@
+# Cerne · pilha de produção para uma VPS (Docker Compose v2).
+#   cp .env.example .env   # preencha
+#   docker compose up -d --build
+# Serviços: db (Postgres 16) · api (FastAPI) · web (Caddy: HTTPS automático + painel) · backup
+# Opcional: worker de sincronização com o ERP  ->  docker compose --profile sync up -d
+
+name: cerne
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql+psycopg://cerne:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@db:5432/cerne
+  ADMIN_TOKEN: ${ADMIN_TOKEN:?defina ADMIN_TOKEN no .env}
+  CERNE_MASTER_KEY: ${CERNE_MASTER_KEY:?defina CERNE_MASTER_KEY no .env}
+  RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-240}
+  DOCS_ENABLED: ${DOCS_ENABLED:-true}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  AUTO_CREATE_SCHEMA: "false"
+  TZ: America/Sao_Paulo
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cerne
+      POSTGRES_USER: cerne
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: America/Sao_Paulo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cerne -d cerne"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [interna]
+    logging: *logging
+
+  api:
+    build: ../api
+    image: cerne-api:${CERNE_VERSION:-latest}
+    restart: unless-stopped
+    command: ["api"]
+    environment:
+      <<: *api-env
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [interna]
+    logging: *logging
+
+  web:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CERNE_DOMAIN: ${CERNE_DOMAIN:?defina CERNE_DOMAIN no .env}
+      ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL no .env}
+      ADMIN_ALLOW_IPS: ${ADMIN_ALLOW_IPS:-0.0.0.0/0 ::/0}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../painel:/srv/painel:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+    networks: [interna]
+    logging: *logging
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: cerne
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: cerne
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      TZ: America/Sao_Paulo
+    volumes:
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup.sh", "loop"]
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [interna]
+    logging: *logging
+
+  worker:
+    image: cerne-api:${CERNE_VERSION:-latest}
+    profiles: ["sync"]
+    restart: unless-stopped
+    command: ["worker"]
+    environment:
+      <<: *api-env
+      SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-24}
+      FIELD_MAP: ${FIELD_MAP:-}
+      SERVICE_MAP: ${SERVICE_MAP:-}
+    volumes:
+      - ./config:/app/config/local:ro
+    depends_on:
+      db: { condition: service_healthy }
+      api: { condition: service_healthy }
+    networks: [interna]
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  interna:

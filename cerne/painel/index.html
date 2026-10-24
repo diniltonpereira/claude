@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerne · Painel do provedor</title>
+  <meta name="description" content="Separação e comprovação SCM × SVA">
+  <meta name="theme-color" content="#0A1B33">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Login -->
+  <main id="login" class="login" hidden>
+    <div class="login-card">
+      <div class="brand brand-lg">
+        <img src="assets/simbolo-escuro.svg" alt="" width="56" height="56">
+        <div><div class="wordmark">CERNE</div><div class="descriptor">API · SCM × SVA</div></div>
+      </div>
+      <p class="tagline">Clareza que se comprova.</p>
+      <form id="login-form" novalidate>
+        <label for="api-key">Chave de API do provedor</label>
+        <input id="api-key" name="key" type="password" autocomplete="off" spellcheck="false"
+               placeholder="cerne_…" required>
+        <label class="check"><input type="checkbox" id="remember"> Manter conectado neste dispositivo</label>
+        <p class="field-error" id="login-error" role="alert"></p>
+        <button class="btn btn-gold" type="submit">Entrar</button>
+      </form>
+      <button class="link" id="go-admin" type="button">Acesso administrativo</button>
+    </div>
+  </main>
+
+  <!-- Admin (operador da plataforma) -->
+  <main id="admin" class="login" hidden>
+    <div class="login-card wide">
+      <div class="brand brand-lg">
+        <img src="assets/simbolo-escuro.svg" alt="" width="40" height="40">
+        <div><div class="wordmark">CERNE</div><div class="descriptor">Administração</div></div>
+      </div>
+      <div id="admin-body"></div>
+      <button class="link" id="leave-admin" type="button">Voltar</button>
+    </div>
+  </main>
+
+  <!-- App -->
+  <div id="app" class="shell" hidden>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <img src="assets/simbolo-escuro.svg" alt="" width="32" height="32">
+        <div><div class="wordmark sm">CERNE</div><div class="descriptor">API · SCM × SVA</div></div>
+      </div>
+      <nav id="nav" aria-label="Seções"></nav>
+      <div class="sidebar-foot">
+        <div class="provider-name" id="provider-name"></div>
+        <button class="link light" id="logout" type="button">Sair</button>
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn" id="menu-btn" type="button" aria-label="Abrir menu">
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+        <h1 id="page-title"></h1>
+        <div class="topbar-actions" id="page-actions"></div>
+      </header>
+      <section id="view" class="view" tabindex="-1"></section>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <dialog id="dialog"></dialog>
+  <script src="app.js" defer></script>
+</body>
+</html>
