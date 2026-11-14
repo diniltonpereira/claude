@@ -386,3 +386,27 @@ def test_api_terceirizada_selo_qr_e_auditor_somente_leitura(tmp_path):
     novo = cli.post("/fatores", headers=H(reg), json={"codigo": "energia_sin", "valor": 0.04,
                                                       "fonte": "MCTI", "ano_referencia": 2025})
     assert novo.status_code == 201
+
+
+# ---------------------------------------------------------------- fila offline: reenvio sem duplicar
+def test_reenvio_da_fila_offline_nao_duplica(s, ct):
+    c = s["c"]
+    inv = mrv.criar_inventario(c, s["elab"], s["org"], 2025)
+    a1 = mrv.adicionar_atividade(c, s["elab"], inv, descricao="glp", fator="glp", quantidade=10,
+                                 anexo_id=pdf(s, s["elab"]), chave_idempotencia="dispositivo-1-0001")
+    a2 = mrv.adicionar_atividade(c, s["elab"], inv, descricao="glp", fator="glp", quantidade=10,
+                                 anexo_id=pdf(s, s["elab"]), chave_idempotencia="dispositivo-1-0001")
+    assert a1 == a2 and c.execute("SELECT COUNT(*) FROM atividade").fetchone()[0] == 1
+    inv2 = mrv.criar_inventario(c, s["elab"], s["org"], 2024)
+    with pytest.raises(ErroNegocio, match="outro inventário"):
+        mrv.adicionar_atividade(c, s["elab"], inv2, descricao="x", fator="glp", quantidade=1,
+                                chave_idempotencia="dispositivo-1-0001")
+    with pytest.raises(NaoAutorizado):
+        mrv.adicionar_atividade(c, s["elab2"], inv, descricao="x", fator="glp", quantidade=1,
+                                chave_idempotencia="dispositivo-1-0001")
+    terceirizadas.aceitar(c, s["forn"], ct)
+    l1 = terceirizadas.lancar(c, s["forn"], ct, ano=2026, mes=1, descricao="d", fator="diesel_b", quantidade=5,
+                              hoje=HOJE, chave_idempotencia="tel-9-1")
+    l2 = terceirizadas.lancar(c, s["forn"], ct, ano=2026, mes=1, descricao="d", fator="diesel_b", quantidade=5,
+                              hoje=HOJE, chave_idempotencia="tel-9-1")
+    assert l1 == l2 and c.execute("SELECT COUNT(*) FROM lancamento_fornecedor").fetchone()[0] == 1

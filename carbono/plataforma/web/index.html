@@ -9,6 +9,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Atkinson+Hyperlegible+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="app.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1F6B4F">
+  <link rel="icon" href="icone-192.png">
+  <link rel="apple-touch-icon" href="icone-192.png">
 </head>
 <body>
   <a class="pular" href="#conteudo">Ir para o conteúdo</a>
@@ -20,6 +24,7 @@
       </svg>
       <span>CarbonMG</span>
     </a>
+    <div id="conexao" class="conexao" aria-live="polite"></div>
     <div id="sessao" class="sessao"></div>
   </header>
   <div class="moldura">
@@ -37,6 +42,7 @@
       </div>
     </form>
   </dialog>
+  <script src="offline.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

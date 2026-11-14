@@ -43,7 +43,7 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | `marketplace.py` | Credenciamento, ofertas, catálogo, pedido no rito da despesa pública, carteira, minuta de TR |
 | `api.py` | Rotas REST e páginas estáticas em `/painel` |
 | `demo.py` | Cenário fictício completo |
-| `web/` | Painel (`index.html`, `app.css`, `app.js`) |
+| `web/` | Painel (`index.html`, `app.css`, `app.js`); `sw.js` (service worker: app e consultas offline), `offline.js` (fila de envio em IndexedDB), `manifest.webmanifest` e ícones (PWA) |
 
 ## 3. Papéis e permissões
 

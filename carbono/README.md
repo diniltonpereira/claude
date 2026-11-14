@@ -27,7 +27,7 @@ Requisitos: Python 3.12 ou 3.13. Não há etapa de build.
 cd carbono
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m pytest -q                          # 100 testes
+python -m pytest -q                          # 101 testes
 python -m plataforma demo --banco demo.db    # dados fictícios completos
 python -m plataforma servir --banco demo.db --demo  # http://127.0.0.1:8000 (painel) e /docs (API)
 ```
@@ -74,6 +74,7 @@ python -m plataforma rotina-diaria --banco carbono.db     # cron: 1 vez por dia
 | **Créditos** | Espelho de CBE, CRVE e créditos voluntários; voluntário exige certificadora e certificado; cancelamento exige o nº da aposentadoria na certificadora; livro-razão com hash encadeado; certificado público verificável por hash e QR |
 | **Compra de créditos** | Credenciamento aberto de vendedores com critérios objetivos (Lei 14.133, art. 79) e validade de 12 meses; catálogo com filtros (MG, categoria); simulação com a taxa explícita; pedido no rito da despesa pública (instrução com minuta de TR neutra, empenho prévio que reserva a quantidade, entrega no registro, liquidação atestada pelo fiscal, pagamento); carteira de compensação do órgão |
 | **Projetos de geração** | Cadastro com coordenadas, área, matrícula/CAR, linha de base e estimativa; funil de 7 etapas (ideia > viabilidade > concepção > validação > verificação > emissão > venda) com checklist, responsável e evidência; travas da Lei 15.042 (titularidade pela natureza da área, licitação para parceiro em área pública, anuência do órgão gestor, consulta e repartição mínima com comunidades, averbação do contrato); parceria com divisão de créditos e registro da assinatura eletrônica |
+| **Uso em campo, sem conexão** | App instalável no celular (PWA); telas e consultas já abertas funcionam sem internet; lançamentos de atividade e de terceirizada, com o comprovante, ficam numa fila no aparelho e são enviados sozinhos quando a conexão volta, sem duplicar (chave de idempotência); aviso de "Sem conexão" e "N para enviar"; dados guardados apagados ao sair |
 | **Relatórios e transparência** | Relatório do inventário em HTML para PDF e em Excel, com metodologia, fatores e versão, memória de cálculo, SHA-256 dos anexos e trilha; painel público por órgão; trilha de auditoria (quem, quando, IP, antes e depois) |
 
 ## Documentação para o desenvolvedor

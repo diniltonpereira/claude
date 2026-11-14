@@ -126,7 +126,27 @@ O banco anterior fica salvo com o sufixo `.antes-da-restauracao`.
 - [ ] Registrar as operações de tratamento (art. 37) e avaliar se cabe um relatório de impacto (art. 38).
 - [ ] WhatsApp e e-mail automáticos: só com opt-in e base legal (a interface `Notificador` está pronta, sem envio).
 
-## 7. Modo demonstração
+## 7. Uso em campo, sem conexão (PWA)
+
+- **Instalar no celular:** abra o endereço no Chrome (Android) ou no Safari (iPhone) e use "Adicionar à tela inicial" ou "Instalar app". O modo offline exige HTTPS, que o proxy da seção 2.3 já oferece.
+- **O que funciona sem sinal:**
+  - abrir o app;
+  - consultar inventários, contratos, unidades, painel, projetos e fatores que já foram abertos com conexão naquele aparelho;
+  - lançar atividades do inventário e lançamentos de terceirizadas, com foto ou PDF do comprovante.
+- **O que não funciona sem sinal:** aprovar, verificar, comprar, cancelar créditos, gerar relatórios e qualquer outra ação. Essas ações exigem o servidor e mostram "Sem conexão".
+- **Envio:**
+  - os lançamentos offline ficam na fila do aparelho (IndexedDB) e são enviados sozinhos quando a conexão volta, ou pelo botão "Enviar agora" em "Para enviar";
+  - cada um leva uma chave única: se o envio for repetido (por exemplo, a resposta se perdeu), o servidor devolve o lançamento já gravado, sem duplicar;
+  - um lançamento recusado pelo servidor (exemplo: inventário já submetido) fica marcado com o motivo e pode ser descartado.
+- **Sessão:** se ela expirar enquanto o aparelho está sem sinal, a fila é mantida. Depois de entrar de novo, o envio continua.
+- **Privacidade:**
+  - a fila é separada por usuário;
+  - ao sair, as consultas guardadas são apagadas do aparelho;
+  - anexos baixados, exportação de dados pessoais e trilha de auditoria nunca são guardados offline;
+  - em aparelho compartilhado, oriente o usuário a sair ao terminar.
+- **Atualização do app:** o service worker usa o app guardado e busca a nova versão em segundo plano, então a atualização aparece na abertura seguinte. Ao mudar arquivos do painel, troque `VERSAO` em `plataforma/web/sw.js` para descartar o cache antigo de imediato.
+
+## 8. Modo demonstração
 `python -m plataforma demo --banco demo.db` e `python -m plataforma servir --banco demo.db --demo`.
 
 Nesse modo, a entrada é pelo número do usuário (cabeçalho `X-Usuario-Id`), sem senha. **Nunca use em produção.** O modo produção é o padrão e ignora esse cabeçalho.

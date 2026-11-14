@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 5
+VERSAO_ESQUEMA = 6
 VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
@@ -141,7 +141,8 @@ CREATE TABLE IF NOT EXISTS atividade (
     tco2_biogenico  REAL NOT NULL DEFAULT 0 CHECK (tco2_biogenico >= 0),
     memoria         TEXT NOT NULL,
     evidencia       TEXT,                   -- referência textual (processo SEI etc.)
-    anexo_id        INTEGER REFERENCES anexo(id)            -- sem anexo = pendente de comprovação
+    anexo_id        INTEGER REFERENCES anexo(id),           -- sem anexo = pendente de comprovação
+    chave_idempotencia TEXT                 -- envio da fila offline: reenvio não duplica
 );
 CREATE INDEX IF NOT EXISTS ix_atividade_inventario ON atividade(inventario_id);
 CREATE INDEX IF NOT EXISTS ix_atividade_instalacao ON atividade(instalacao_id);
@@ -199,7 +200,8 @@ CREATE TABLE IF NOT EXISTS lancamento_fornecedor (
     anexo_id        INTEGER REFERENCES anexo(id),
     lancado_por     INTEGER NOT NULL REFERENCES usuario(id),
     lancado_pelo_fiscal INTEGER NOT NULL DEFAULT 0 CHECK (lancado_pelo_fiscal IN (0,1)),
-    lancado_em      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    lancado_em      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    chave_idempotencia TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_lanc_contrato ON lancamento_fornecedor(contrato_id, ano, mes);
 
@@ -432,6 +434,11 @@ CREATE TABLE IF NOT EXISTS parceria (
     CHECK (assinatura = 'minuta' OR assinatura_ref IS NOT NULL)
 );
 
+-- ---------------------------------------------------------------- fila offline (versão 6)
+CREATE UNIQUE INDEX IF NOT EXISTS ux_atividade_chave ON atividade(chave_idempotencia) WHERE chave_idempotencia IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_lancamento_chave ON lancamento_fornecedor(chave_idempotencia)
+    WHERE chave_idempotencia IS NOT NULL;
+
 -- ---------------------------------------------------------------- acesso (versão 5)
 CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_email ON usuario(email) WHERE email IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_cpf ON usuario(cpf_hmac) WHERE cpf_hmac IS NOT NULL;
@@ -500,9 +507,15 @@ def _migrar_4_para_5(con: sqlite3.Connection) -> None:
             con.execute(f"ALTER TABLE usuario ADD COLUMN {nome} {tipo}")
 
 
+def _migrar_5_para_6(con: sqlite3.Connection) -> None:
+    for tabela in ("atividade", "lancamento_fornecedor"):
+        if "chave_idempotencia" not in {r["name"] for r in con.execute(f"PRAGMA table_info({tabela})")}:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN chave_idempotencia TEXT")
+
+
 # Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
 # próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
-MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5}
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6}
 
 
 def migrar(con: sqlite3.Connection, caminho: str = "") -> int:

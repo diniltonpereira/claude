@@ -7,6 +7,7 @@ checagem de papéis (ver docs/ARQUITETURA.md).
 from __future__ import annotations
 
 import hmac
+import mimetypes
 import io
 import json
 import logging
@@ -30,6 +31,7 @@ from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario
                             fase_em)
 
 NOME = os.environ.get("PLATAFORMA_NOME", "CarbonMG")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 def _base_publica(request: Request) -> str:
@@ -89,6 +91,7 @@ class AtividadeIn(BaseModel):
     instalacao_id: int | None = None
     mes: int | None = Field(default=None, ge=1, le=12)
     anexo_id: int | None = None
+    chave_idempotencia: str | None = Field(default=None, max_length=64)
 
 
 class AtividadeEdicao(BaseModel):
@@ -208,6 +211,7 @@ class LancamentoIn(BaseModel):
     fator: str
     quantidade: float = Field(ge=0)
     anexo_id: int | None = None
+    chave_idempotencia: str | None = Field(default=None, max_length=64)
 
 
 class AcaoIn(BaseModel):

@@ -58,6 +58,11 @@ code, .mono { font-family: var(--mono); font-size: .9em; }
 .marca { display: flex; align-items: center; gap: .6rem; color: var(--tinta); text-decoration: none;
   font-weight: 700; font-size: 1.1rem; }
 .marca svg { color: var(--mata); }
+.conexao { display: flex; gap: .5rem; align-items: center; margin-left: auto; }
+.selo-offline, .selo-fila { font-size: .85rem; font-weight: 700; padding: .25rem .6rem; border-radius: 999px; white-space: nowrap; }
+.selo-offline { background: var(--ambar-fundo); color: var(--ambar); border: 1px solid var(--ambar); }
+.selo-fila { background: var(--mata-fundo); color: var(--mata); border: 1px solid var(--mata); text-decoration: none; }
+.selo-fila.com-erro { background: var(--carmim-fundo); color: var(--carmim); border-color: var(--carmim); }
 .sessao { display: flex; align-items: center; gap: .75rem; font-size: .95rem; color: var(--tinta-suave); }
 .sessao strong { color: var(--tinta); }
 .moldura { display: grid; grid-template-columns: 15rem minmax(0, 1fr); min-height: calc(100vh - 57px); }
@@ -250,7 +255,10 @@ details summary { cursor: pointer; color: var(--mata); font-size: .9rem; margin:
   .conteudo { padding: 1.25rem 1rem 3rem; }
   .colunas { grid-template-columns: 1fr; }
   .topo { padding: .6rem 1rem; }
-  .sessao .papel { display: none; }
+  .sessao .papel, .sessao > span { display: none; }
+  .topo { flex-wrap: wrap; row-gap: .4rem; }
+  .conexao { order: 3; width: 100%; margin-left: 0; }
+  .conexao:empty { display: none; }
   .trilha { grid-template-columns: 1fr 1fr; row-gap: 1.25rem; }
   .trilha li:nth-child(2)::after { display: none; }
   .trilha.seis, .trilha.sete { grid-template-columns: 1fr 1fr; }

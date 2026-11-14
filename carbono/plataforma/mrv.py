@@ -124,7 +124,7 @@ def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id:
                         fracao_biogenica: float | None = None, evidencia: str | None = None,
                         remocao: bool = False, evitada: bool = False,
                         instalacao_id: int | None = None, mes: int | None = None,
-                        anexo_id: int | None = None) -> int:
+                        anexo_id: int | None = None, chave_idempotencia: str | None = None) -> int:
     """Lança uma atividade.
 
     - `fator`: código do fator; grava-se a versão vigente (fica fixada na atividade).
@@ -132,8 +132,19 @@ def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id:
     - `remocao=True`: remoção por sumidouro (só CO2), reduz emissões líquidas (art. 2º, XI).
     - `evitada=True`: emissão evitada (solar, biogás, reciclagem), relatada à parte.
     - sem `anexo_id`: fica pendente de comprovação e fora dos totais.
+    - `chave_idempotencia`: reenvio da fila offline com a mesma chave devolve a atividade já criada.
     """
     inv = buscar(con, "inventario", inventario_id)
+    if chave_idempotencia:
+        ja = con.execute("SELECT id, inventario_id FROM atividade WHERE chave_idempotencia=?",
+                         (chave_idempotencia,)).fetchone()
+        if ja:
+            if ja["inventario_id"] != inventario_id:
+                raise ErroNegocio("Chave de envio já usada em outro inventário.")
+            u = buscar(con, "usuario", usuario_id)
+            if u["papel"] != "elaborador" or u["organizacao_id"] != inv["organizacao_id"]:
+                raise NaoAutorizado("Só um elaborador da organização lança atividades.")
+            return ja["id"]  # reenvio: a atividade já existe, nada é duplicado
     _exigir_edicao(con, usuario_id, inv)
     if (fator is None) == (gas is None):
         raise ErroNegocio("Informe exatamente um: 'fator' ou 'gas'.")
@@ -153,7 +164,8 @@ def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id:
     dados = dict(inventario_id=inventario_id, instalacao_id=instalacao_id, mes=mes, descricao=descricao,
                  escopo=r.escopo, natureza=natureza, origem=f"fator:{fator}" if fator else f"gas:{gas}",
                  fator_id=fator_id, quantidade=quantidade, tco2e=r.tco2e, tco2_biogenico=r.tco2_biogenico,
-                 memoria=prefixo + r.memoria, evidencia=evidencia, anexo_id=anexo_id)
+                 memoria=prefixo + r.memoria, evidencia=evidencia, anexo_id=anexo_id,
+                 chave_idempotencia=chave_idempotencia)
     try:
         aid = con.execute(
             f"INSERT INTO atividade ({', '.join(dados)}) VALUES ({', '.join('?' * len(dados))})",

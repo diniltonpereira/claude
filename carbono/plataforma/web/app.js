@@ -20,6 +20,16 @@ function gravarSessao(v) { try { v ? localStorage.setItem("carbono.uid", v) : lo
 
 /** Resposta de uma tela que o usuário já deixou: é descartada para não sobrescrever a tela atual. */
 class Obsoleta extends Error {}
+/** Servidor inalcançável (sem sinal): o envio vai para a fila do aparelho. */
+class SemConexao extends Error {}
+
+async function buscarRede(caminho, opcoes) {
+  let r;
+  try { r = await fetch(caminho, opcoes); }
+  catch { throw new SemConexao("Sem conexão com o servidor."); }
+  if (r.status === 503 && r.headers.get("X-CarbonMG-Offline")) throw new SemConexao((await r.json()).erro);
+  return r;
+}
 
 function cabecalhos(json = true) {
   const cab = json ? { "Content-Type": "application/json" } : {};
@@ -31,10 +41,17 @@ function cabecalhos(json = true) {
 async function carregarSessao() {
   estado.eu = await api("GET", "/eu");
   estado.csrf = estado.eu.csrf;
+  setTimeout(() => { atualizarIndicador(); sync(); }, 0);
+}
+
+async function limparDadosDoAparelho() {
+  try { await caches.delete("carbonmg-api"); } catch { /* sem cache */ }
+  navigator.serviceWorker?.controller?.postMessage("LIMPAR_DADOS");
 }
 
 async function sair() {
   if (producao()) { try { await api("POST", "/auth/logout"); } catch { /* sessão já encerrada */ } }
+  await limparDadosDoAparelho();
   gravarSessao(null); estado.uid = null; estado.eu = null; estado.csrf = null; location.hash = "#/entrar";
 }
 
@@ -48,7 +65,7 @@ async function lerErro(r) {
 
 async function api(metodo, caminho, corpo) {
   const tela = location.hash;
-  const r = await fetch(caminho, { method: metodo, headers: cabecalhos(), body: corpo ? JSON.stringify(corpo) : undefined });
+  const r = await buscarRede(caminho, { method: metodo, headers: cabecalhos(), body: corpo ? JSON.stringify(corpo) : undefined });
   if (!r.ok) throw await lerErro(r);
   const json = await r.json();
   if (metodo === "GET" && location.hash !== tela) throw new Obsoleta();
@@ -59,7 +76,7 @@ async function api(metodo, caminho, corpo) {
 async function enviarArquivo(arquivo) {
   const fd = new FormData();
   fd.append("arquivo", arquivo);
-  const r = await fetch("/anexos", { method: "POST", headers: cabecalhos(false), body: fd });
+  const r = await buscarRede("/anexos", { method: "POST", headers: cabecalhos(false), body: fd });
   if (!r.ok) throw await lerErro(r);
   return (await r.json()).id;
 }
@@ -210,6 +227,7 @@ async function telaEntrar() {
     catch (e) { estado.uid = null; throw new Error(e.status === 401 ? "Usuário não encontrado. Confira o número com a administração." : e.message); }
     gravarSessao(estado.uid);
     location.hash = "#/inicio";
+    atualizarIndicador(); sync();
   });
 }
 
@@ -350,6 +368,80 @@ async function telaConta() {
       aoEnviar($("#f-totp"), async (d) => { await api("POST", "/auth/2fa/confirmar", d); await carregarSessao(); avisar("Verificação em duas etapas ativada."); telaConta(); });
     } catch (e) { avisar(e.message, true); }
   };
+}
+
+// ---------------------------------------------------------------- fila offline
+/** Tenta enviar; sem conexão, guarda no aparelho com chave única (o reenvio não duplica no servidor). */
+async function enviarOuGuardar({ destino, corpo, arquivo, descricao }) {
+  const item = { chave: Fila.novaChave(), usuario: estado.eu.usuario.id, destino, corpo, descricao,
+    arquivo: arquivo || null, nome_arquivo: arquivo?.name || null, tipo_arquivo: arquivo?.type || null };
+  try {
+    await enviarItem(item);
+    return { enviado: true };
+  } catch (e) {
+    if (!(e instanceof SemConexao)) throw e;
+    await Fila.adicionar(item);
+    atualizarIndicador();
+    return { enviado: false };
+  }
+}
+
+async function enviarItem(item) {
+  const corpo = { ...item.corpo, chave_idempotencia: item.chave };
+  if (item.arquivo) corpo.anexo_id = await enviarArquivo(new File([item.arquivo], item.nome_arquivo || "comprovante", { type: item.tipo_arquivo || "" }));
+  const r = await buscarRede(item.destino, { method: "POST", headers: cabecalhos(), body: JSON.stringify(corpo) });
+  if (!r.ok) throw await lerErro(r);
+}
+
+let sincronizando = false;
+async function sincronizar(manual = false) {
+  if (sincronizando || !estado.eu) return;
+  sincronizando = true;
+  let enviados = 0, falhas = 0;
+  try {
+    for (const item of await Fila.listar(estado.eu.usuario.id)) {
+      if (item.status === "erro" && !manual) continue;
+      try { await enviarItem(item); await Fila.remover(item.chave); enviados++; }
+      catch (e) {
+        if (e instanceof SemConexao || e.status === 401) break;
+        await Fila.atualizar({ ...item, status: "erro", erro: e.message }); falhas++;
+      }
+    }
+  } finally { sincronizando = false; }
+  await atualizarIndicador();
+  if (enviados) { avisar(`${enviados} lançamento(s) guardado(s) no aparelho foram enviados.`); navegar(); }
+  else if (falhas) avisar(`${falhas} lançamento(s) recusado(s) pelo servidor. Veja em "Para enviar".`, true);
+}
+const sync = () => { if (navigator.onLine) sincronizar(); };
+
+async function atualizarIndicador() {
+  const el = $("#conexao");
+  if (!el) return;
+  const itens = estado.eu ? await Fila.listar(estado.eu.usuario.id).catch(() => []) : [];
+  const erros = itens.filter((i) => i.status === "erro").length;
+  el.innerHTML = (navigator.onLine ? "" : `<span class="selo-offline">Sem conexão</span>`)
+    + (itens.length ? `<a href="#/pendentes" class="selo-fila${erros ? " com-erro" : ""}">${itens.length} para enviar</a>` : "");
+}
+
+async function telaPendentes() {
+  const itens = await Fila.listar(estado.eu.usuario.id);
+  conteudo.innerHTML = `<h1>Para enviar</h1>
+    <p class="introducao">Lançamentos feitos sem conexão ficam guardados neste aparelho, com o comprovante, e são enviados sozinhos quando a conexão volta. Cada um tem uma chave única: se o envio for repetido, o servidor não duplica.</p>
+    <section class="bloco">${itens.length ? `<ul class="obrigacoes">${itens.map((i) => `<li><strong>${esc(i.descricao)}</strong>
+      <div class="memoria">Guardado em ${data(i.criado_em)}${i.nome_arquivo ? " · comprovante: " + esc(i.nome_arquivo) : " · sem comprovante"}</div>
+      ${i.status === "erro" ? `<p class="erro-campo">Recusado pelo servidor: ${esc(i.erro)}</p>` : `<span class="situacao submetido">Aguardando conexão</span>`}
+      <div><button type="button" class="link perigo-texto" data-descartar="${esc(i.chave)}">Descartar</button></div></li>`).join("")}</ul>
+      <div class="acoes" style="margin-top:1rem"><button type="button" class="botao" id="b-enviar">Enviar agora</button></div>`
+      : `<p class="vazio">Nada guardado no aparelho. Tudo foi enviado.</p>`}</section>`;
+  const b = $("#b-enviar");
+  if (b) b.onclick = async () => {
+    if (!navigator.onLine) { avisar("Ainda sem conexão. O envio será automático quando ela voltar.", true); return; }
+    await sincronizar(true); telaPendentes();
+  };
+  conteudo.querySelectorAll("[data-descartar]").forEach((x) => (x.onclick = async () => {
+    if (!(await confirmar("Descartar lançamento?", "O lançamento guardado neste aparelho será apagado e não será enviado.", "Descartar lançamento"))) return;
+    await Fila.remover(x.dataset.descartar); await atualizarIndicador(); telaPendentes();
+  }));
 }
 
 // ---------------------------------------------------------------- painel do gestor
@@ -604,14 +696,16 @@ function ligarFormAtividade(id) {
   const sync = () => form.querySelectorAll("[data-modo]").forEach((el) => (el.hidden = !el.dataset.modo.split(" ").includes(modo.value)));
   modo.addEventListener("change", sync); sync();
   aoEnviar(form, async (d) => {
-    const anexo = await anexoDoCampo(form);
+    const arquivo = form.elements.arquivo.files[0] || null;
     const corpo = { descricao: d.descricao, quantidade: d.quantidade, evidencia: d.evidencia || null,
-      instalacao_id: d.instalacao_id ? Number(d.instalacao_id) : null, mes: d.mes ? Number(d.mes) : null, anexo_id: anexo };
+      instalacao_id: d.instalacao_id ? Number(d.instalacao_id) : null, mes: d.mes ? Number(d.mes) : null };
     if (d.modo === "fator" || d.modo === "evitada") { corpo.fator = d.fator; corpo.evitada = d.modo === "evitada"; }
     else if (d.modo === "gas") { corpo.gas = d.gas; corpo.escopo = Number(d.escopo); }
     else { corpo.gas = "CO2"; corpo.remocao = true; }
-    await api("POST", `/inventarios/${id}/atividades`, corpo);
-    avisar(anexo ? "Atividade lançada." : "Atividade lançada sem comprovante: fica pendente."); telaInventario(id);
+    const r = await enviarOuGuardar({ destino: `/inventarios/${id}/atividades`, corpo, arquivo,
+      descricao: `Atividade "${d.descricao}" no inventário nº ${id}` });
+    if (!r.enviado) { form.reset(); sync(); avisar("Sem conexão: lançamento guardado no aparelho. Será enviado quando a conexão voltar."); return; }
+    avisar(arquivo ? "Atividade lançada." : "Atividade lançada sem comprovante: fica pendente."); telaInventario(id);
   });
 }
 
@@ -829,9 +923,12 @@ async function telaContrato(id) {
   if (bselo) bselo.onclick = async () => { try { const r = await api("POST", `/contratos/${id}/selos`); avisar(`Selo nível ${r.classe} emitido.`); recarregar(); } catch (e) { avisar(e.message, true); } };
   conteudo.querySelectorAll("[data-baixar]").forEach((b) => (b.onclick = () => baixar(`/anexos/${b.dataset.baixar}`, b.dataset.nome).catch((e) => avisar(e.message, true))));
   aoEnviar($("#f-lanc"), async (d, form) => {
-    const anexo = await anexoDoCampo(form);
-    await api("POST", `/contratos/${id}/lancamentos`, { ...d, ano: Number(d.ano), mes: Number(d.mes), anexo_id: anexo });
-    avisar(anexo ? "Lançamento registrado." : "Lançamento registrado sem anexo: fica pendente."); recarregar();
+    const arquivo = form.elements.arquivo.files[0] || null;
+    const r = await enviarOuGuardar({ destino: `/contratos/${id}/lancamentos`, arquivo,
+      corpo: { ...d, ano: Number(d.ano), mes: Number(d.mes) },
+      descricao: `Lançamento de ${MESES[Number(d.mes) - 1]}/${d.ano} no contrato ${ct.numero}` });
+    if (!r.enviado) { form.reset(); avisar("Sem conexão: lançamento guardado no aparelho. Será enviado quando a conexão voltar."); return; }
+    avisar(arquivo ? "Lançamento registrado." : "Lançamento registrado sem anexo: fica pendente."); recarregar();
   });
   aoEnviar($("#f-acao-forn"), async (d, form) => {
     const anexo = await anexoDoCampo(form);
@@ -1367,7 +1464,7 @@ async function navegar() {
       vendas: telaVendas, credenciamentos: telaCredenciamentos,
       projetos: () => (a ? telaProjeto(Number(a)) : telaProjetos()),
       verificar: () => telaVerificar(a, decodeURIComponent(b || "")),
-      "definir-senha": () => telaDefinirSenha(a), privacidade: telaPrivacidade, termos: telaTermos, conta: telaConta,
+      "definir-senha": () => telaDefinirSenha(a), pendentes: telaPendentes, privacidade: telaPrivacidade, termos: telaTermos, conta: telaConta,
     };
     await (telas[rota] || telaInicio)();
   } catch (e) {
@@ -1404,4 +1501,10 @@ window.addEventListener("unhandledrejection", (ev) => {
     }
   }
   if (!location.hash) location.hash = "#/inicio"; else navegar();
+  atualizarIndicador();
+  sync();
 })();
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => { /* app segue sem offline */ });
+window.addEventListener("online", () => { atualizarIndicador(); sincronizar(); });
+window.addEventListener("offline", atualizarIndicador);

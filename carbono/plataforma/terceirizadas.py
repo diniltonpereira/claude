@@ -144,10 +144,17 @@ def listar(con: sqlite3.Connection, usuario_id: int) -> list[dict]:
 # ---------------------------------------------------------------- lançamentos e ações
 def lancar(con: sqlite3.Connection, usuario_id: int, contrato_id: int, *, ano: int, mes: int,
            descricao: str, fator: str, quantidade: float, anexo_id: int | None = None,
-           hoje: date | None = None) -> int:
+           hoje: date | None = None, chave_idempotencia: str | None = None) -> int:
     hoje = hoje or date.today()
     c = buscar(con, "contrato", contrato_id)
     u = _exigir_parte(con, usuario_id, c)
+    if chave_idempotencia:
+        ja = con.execute("SELECT id, contrato_id FROM lancamento_fornecedor WHERE chave_idempotencia=?",
+                         (chave_idempotencia,)).fetchone()
+        if ja:
+            if ja["contrato_id"] != contrato_id:
+                raise ErroNegocio("Chave de envio já usada em outro contrato.")
+            return ja["id"]
     if u["papel"] == "fornecedor" and not c["aceito_em"]:
         raise ErroNegocio("Aceite o convite do contrato antes de lançar.")
     if not 1 <= mes <= 12:
@@ -169,10 +176,10 @@ def lancar(con: sqlite3.Connection, usuario_id: int, contrato_id: int, *, ano: i
     pelo_fiscal = u["papel"] == "fiscal"
     lid = con.execute(
         """INSERT INTO lancamento_fornecedor (contrato_id, ano, mes, descricao, fator_id, quantidade, tco2e,
-           memoria, anexo_id, lancado_por, lancado_pelo_fiscal) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           memoria, anexo_id, lancado_por, lancado_pelo_fiscal, chave_idempotencia) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (contrato_id, ano, mes, descricao, f.id, quantidade, r.tco2e,
          ("LANÇADO PELO FISCAL: " if pelo_fiscal else "") + r.memoria, anexo_id, usuario_id,
-         int(pelo_fiscal))).lastrowid
+         int(pelo_fiscal), chave_idempotencia)).lastrowid
     registrar(con, usuario_id, "lancar", "lancamento_fornecedor", lid,
               depois={"contrato_id": contrato_id, "ano": ano, "mes": mes, "tco2e": r.tco2e,
                       "pelo_fiscal": pelo_fiscal})
