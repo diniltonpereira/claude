@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from datetime import date
 
-from . import anexos, compensacao, marketplace, mrv, painel, registro, terceirizadas
+from . import anexos, compensacao, marketplace, mrv, painel, projetos, registro, terceirizadas
 from .banco import conectar
 from .enquadramento import checar_projeto_publico, enquadrar_operador, fase_em
 
@@ -176,6 +176,22 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
                     metodologia="PNA", safra=ano, quantidade=30_000, serial=f"BR-CBE-{ano}-000001")
     concil = compensacao.compensar(c, elab_san, inv_s, finalidade="conciliacao_sbce", simular=True)
 
+    # ------------------------------------------------ projeto de geração da prefeitura (fase 3)
+    proj = projetos.criar(c, elab, nome="Captação de biogás do aterro municipal", tipo="biogas",
+                          natureza_area="publica_propria", municipio="Vale Verde", uf="MG", latitude=-16.73,
+                          longitude=-43.86, area_ha=12.5, matricula="Matrícula 12.345 (fictícia)",
+                          linha_base="Metano do aterro liberado por drenos passivos, sem captação nem queima.",
+                          estimativa_tco2e_ano=5_000)
+    projetos.registrar_parceria(c, elab, proj, desenvolvedor_cnpj="77777777000191",
+                                desenvolvedor_nome="BioEnergia Desenvolvimento Ltda. (fictícia)",
+                                percentual_titular=60, percentual_desenvolvedor=40,
+                                licitacao_ref=f"Concorrência 3/{hoje.year} (fictícia)")
+    for _ in range(2):  # ideia > viabilidade > concepção
+        etapa = c.execute("SELECT etapa FROM projeto WHERE id=?", (proj,)).fetchone()[0]
+        for it in c.execute("SELECT id, item FROM projeto_item WHERE projeto_id=? AND etapa=?", (proj, etapa)).fetchall():
+            projetos.concluir_item(c, elab, it["id"], anexo_id=_pdf(c, elab, it["item"]), responsavel="Secretaria de Meio Ambiente")
+        projetos.avancar(c, elab, proj)
+
     p = painel.painel(c, pref, ano)
     return {
         "fase_sbce_hoje": fase_em(hoje).numero,
@@ -193,6 +209,8 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
                            "deficit_de_cbe": concil["deficit"]},
         "compra_de_creditos": {"pedido_pago": ped_pago, "pedido_aguardando_entrega": ped_aberto,
                                "carteira": marketplace.carteira(c, pref)},
+        "projeto": {"id": proj, "etapa": c.execute("SELECT etapa FROM projeto WHERE id=?", (proj,)).fetchone()[0],
+                    "pendencias": projetos.pendencias(c, proj)},
         "livro_razao": registro.verificar_cadeia(c),
         "usuarios": {"registrador": reg, "gestora_prefeitura": elab, "verificador": verif, "moderadora": mod,
                      "concessao_florestal": gest_flor, "concessionaria": elab_san, "fiscal": fiscal,

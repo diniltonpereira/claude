@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 3
+VERSAO_ESQUEMA = 4
 
 ESQUEMA = """
 PRAGMA foreign_keys = ON;
@@ -359,6 +359,64 @@ CREATE TABLE IF NOT EXISTS pedido (
     CHECK (empenho_valor IS NULL OR empenho_valor >= valor_total - 0.005)
 );
 CREATE INDEX IF NOT EXISTS ix_pedido_orgao ON pedido(orgao_id, status);
+
+-- ---------------------------------------------------------------- projetos de geração (fase 3)
+-- A plataforma organiza o projeto; validação, verificação e emissão são da certificadora.
+CREATE TABLE IF NOT EXISTS projeto (
+    id              INTEGER PRIMARY KEY,
+    titular_id      INTEGER NOT NULL REFERENCES organizacao(id),
+    nome            TEXT NOT NULL,
+    tipo            TEXT NOT NULL CHECK (tipo IN ('biogas','solar','eficiencia','restauracao_psa','residuos','hidrogenio')),
+    -- natureza da área define a titularidade dos créditos (Lei 15.042/2024, art. 43)
+    natureza_area   TEXT NOT NULL CHECK (natureza_area IN ('publica_propria','publica_terceiros','privada',
+                    'terra_indigena','quilombola','comunidade_tradicional','assentamento')),
+    municipio       TEXT NOT NULL,
+    uf              TEXT NOT NULL CHECK (length(uf) = 2),
+    latitude        REAL NOT NULL CHECK (latitude BETWEEN -34 AND 6),      -- território brasileiro
+    longitude       REAL NOT NULL CHECK (longitude BETWEEN -74 AND -28),
+    area_ha         REAL CHECK (area_ha IS NULL OR area_ha > 0),
+    matricula       TEXT,
+    car             TEXT,
+    linha_base      TEXT NOT NULL,
+    estimativa_tco2e_ano REAL NOT NULL CHECK (estimativa_tco2e_ano > 0),
+    etapa           TEXT NOT NULL DEFAULT 'ideia' CHECK (etapa IN
+                    ('ideia','viabilidade','concepcao','validacao','verificacao','emissao','venda')),
+    anuencia_ref    TEXT,                   -- anuência/comunicação ao órgão gestor da área (art. 49)
+    consulta_anexo_id INTEGER REFERENCES anexo(id),  -- consulta livre, prévia e informada (art. 47, I, a)
+    certificadora   TEXT,
+    registro_ref    TEXT,                   -- nº do projeto/emissão no registro da certificadora
+    lote_serial     TEXT,                   -- lote escriturado para venda
+    criado_por      INTEGER NOT NULL REFERENCES usuario(id),
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS projeto_item (
+    id              INTEGER PRIMARY KEY,
+    projeto_id      INTEGER NOT NULL REFERENCES projeto(id),
+    etapa           TEXT NOT NULL,
+    item            TEXT NOT NULL,
+    responsavel     TEXT,
+    concluido       INTEGER NOT NULL DEFAULT 0 CHECK (concluido IN (0,1)),
+    anexo_id        INTEGER REFERENCES anexo(id),
+    concluido_em    TEXT,
+    CHECK (concluido = 0 OR anexo_id IS NOT NULL),
+    UNIQUE (projeto_id, etapa, item)
+);
+
+CREATE TABLE IF NOT EXISTS parceria (
+    id              INTEGER PRIMARY KEY,
+    projeto_id      INTEGER NOT NULL UNIQUE REFERENCES projeto(id),
+    desenvolvedor_id INTEGER NOT NULL REFERENCES organizacao(id),
+    percentual_titular REAL NOT NULL CHECK (percentual_titular BETWEEN 0 AND 100),
+    percentual_desenvolvedor REAL NOT NULL CHECK (percentual_desenvolvedor BETWEEN 0 AND 100),
+    percentual_comunidade REAL NOT NULL DEFAULT 0 CHECK (percentual_comunidade BETWEEN 0 AND 100),
+    licitacao_ref   TEXT,                   -- obrigatória em projeto público com parceiro privado (art. 43, § 1º)
+    averbacao_ref   TEXT,                   -- averbação no registro de imóveis (art. 43, § 5º)
+    assinatura      TEXT NOT NULL DEFAULT 'minuta' CHECK (assinatura IN ('minuta','assinado')),
+    assinatura_ref  TEXT,                   -- gov.br / Clicksign
+    CHECK (abs(percentual_titular + percentual_desenvolvedor + percentual_comunidade - 100) < 0.001),
+    CHECK (assinatura = 'minuta' OR assinatura_ref IS NOT NULL)
+);
 
 -- Trilha de auditoria geral: quem, quando, de onde, o que havia antes e depois.
 CREATE TABLE IF NOT EXISTS auditoria (

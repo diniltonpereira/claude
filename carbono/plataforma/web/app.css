@@ -125,6 +125,8 @@ tr.clicavel { cursor: pointer; }
 .trilha li.devolvida::before { content: "!"; border-color: var(--carmim); background: var(--carmim); color: var(--folha); }
 .trilha strong { display: block; }
 .trilha.seis { grid-template-columns: repeat(6, 1fr); }
+.trilha.sete { grid-template-columns: repeat(7, 1fr); }
+.trilha.sete li strong { font-size: .9rem; }
 .carimbo {
   display: inline-block; margin-top: .4rem; padding: .2rem .5rem; font-size: .8rem; line-height: 1.35;
   border: 1.5px solid var(--mata); color: var(--mata); border-radius: 3px; transform: rotate(-1.5deg);
@@ -224,7 +226,8 @@ details summary { cursor: pointer; color: var(--mata); font-size: .9rem; margin:
 .ficha { display: grid; gap: .6rem; margin: 0 0 1rem; }
 .ficha div { display: grid; grid-template-columns: 14rem 1fr; gap: 1rem; border-bottom: 1px solid var(--linha); padding-bottom: .5rem; }
 .ficha dt { color: var(--tinta-suave); }
-.ficha dd { margin: 0; }
+.ficha dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.colunas .ficha div { grid-template-columns: minmax(7rem, 40%) minmax(0, 1fr); }
 
 /* Ações em linha */
 .link { background: none; border: 0; padding: 0; font: inherit; color: var(--mata); text-decoration: underline; cursor: pointer; text-align: left; }
@@ -247,7 +250,8 @@ details summary { cursor: pointer; color: var(--mata); font-size: .9rem; margin:
   .sessao .papel { display: none; }
   .trilha { grid-template-columns: 1fr 1fr; row-gap: 1.25rem; }
   .trilha li:nth-child(2)::after { display: none; }
-  .trilha.seis { grid-template-columns: 1fr 1fr; }
+  .trilha.seis, .trilha.sete { grid-template-columns: 1fr 1fr; }
+  .trilha.sete li:nth-child(2n)::after { display: none; }
   .trilha.seis li:nth-child(2n)::after { display: none; }
   .fases { grid-template-columns: 1fr; }
   .bloco { padding: 1rem; }

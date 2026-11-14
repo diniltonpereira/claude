@@ -18,7 +18,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import anexos, auditoria, compensacao, fatores, marketplace, mrv, painel, registro, relatorio, terceirizadas
+from . import (anexos, auditoria, compensacao, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+               terceirizadas)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
                             checar_projeto_publico, checar_reparticao_comunidade, enquadrar_operador,
@@ -267,6 +268,50 @@ class PagamentoIn(BaseModel):
 
 class CancelamentoPedidoIn(BaseModel):
     motivo: str = Field(min_length=3)
+
+
+class ProjetoIn(BaseModel):
+    nome: str = Field(min_length=3)
+    tipo: Literal["biogas", "solar", "eficiencia", "restauracao_psa", "residuos", "hidrogenio"]
+    natureza_area: Literal["publica_propria", "publica_terceiros", "privada", "terra_indigena", "quilombola",
+                           "comunidade_tradicional", "assentamento"]
+    municipio: str = Field(min_length=2)
+    uf: str = Field(pattern=r"^[A-Za-z]{2}$")
+    latitude: float = Field(ge=-34, le=6)
+    longitude: float = Field(ge=-74, le=-28)
+    linha_base: str = Field(min_length=10)
+    estimativa_tco2e_ano: float = Field(gt=0)
+    area_ha: float | None = Field(default=None, gt=0)
+    matricula: str | None = None
+    car: str | None = None
+
+
+class ProjetoAtualizacaoIn(BaseModel):
+    anuencia_ref: str | None = None
+    consulta_anexo_id: int | None = None
+    certificadora: str | None = None
+    registro_ref: str | None = None
+    lote_serial: str | None = None
+
+
+class ItemIn(BaseModel):
+    anexo_id: int
+    responsavel: str = Field(min_length=2)
+
+
+class ParceriaIn(BaseModel):
+    desenvolvedor_cnpj: str = Field(pattern=r"^\d{14}$")
+    desenvolvedor_nome: str = Field(min_length=2)
+    percentual_titular: float = Field(ge=0, le=100)
+    percentual_desenvolvedor: float = Field(ge=0, le=100)
+    percentual_comunidade: float = Field(default=0, ge=0, le=100)
+    licitacao_ref: str | None = None
+    averbacao_ref: str | None = None
+
+
+class AssinaturaIn(BaseModel):
+    assinatura_ref: str = Field(min_length=3)
+    averbacao_ref: str | None = None
 
 
 # ---------------------------------------------------------------- aplicação
@@ -766,6 +811,47 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
     def ver_carteira(oid: int, u=Depends(usuario), c=Depends(db)):
         _pode_ver_org(u, oid)
         return marketplace.carteira(c, oid)
+
+    # ---------------- projetos de geração (fase 3) ----------------
+    @app.get("/projetos/regras")
+    def regras_projetos():
+        return {"etapas": [{"codigo": e, "nome": projetos.NOME_ETAPA[e]} for e in projetos.ETAPAS],
+                "tipos": projetos.TIPOS, "checklist": projetos.CHECKLIST}
+
+    @app.post("/projetos", status_code=201)
+    def criar_projeto(d: ProjetoIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": projetos.criar(c, u["id"], **d.model_dump())}
+
+    @app.get("/projetos")
+    def listar_projetos(u=Depends(usuario), c=Depends(db)):
+        return projetos.listar(c, u["id"])
+
+    @app.get("/projetos/{pid}")
+    def ver_projeto(pid: int, u=Depends(usuario), c=Depends(db)):
+        return projetos.ver(c, u["id"], pid)
+
+    @app.patch("/projetos/{pid}")
+    def atualizar_projeto(pid: int, d: ProjetoAtualizacaoIn, u=Depends(usuario), c=Depends(db)):
+        projetos.atualizar(c, u["id"], pid, **d.model_dump())
+        return {"ok": True}
+
+    @app.post("/projetos/itens/{iid}/conclusao")
+    def concluir_item(iid: int, d: ItemIn, u=Depends(usuario), c=Depends(db)):
+        projetos.concluir_item(c, u["id"], iid, anexo_id=d.anexo_id, responsavel=d.responsavel)
+        return {"ok": True}
+
+    @app.post("/projetos/{pid}/parceria", status_code=201)
+    def parceria(pid: int, d: ParceriaIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": projetos.registrar_parceria(c, u["id"], pid, **d.model_dump())}
+
+    @app.post("/projetos/{pid}/parceria/assinatura")
+    def assinar(pid: int, d: AssinaturaIn, u=Depends(usuario), c=Depends(db)):
+        projetos.assinar_parceria(c, u["id"], pid, **d.model_dump())
+        return {"ok": True}
+
+    @app.post("/projetos/{pid}/avanco")
+    def avancar(pid: int, u=Depends(usuario), c=Depends(db)):
+        return {"etapa": projetos.avancar(c, u["id"], pid)}
 
     # ---------------- auditoria ----------------
     @app.get("/auditoria")

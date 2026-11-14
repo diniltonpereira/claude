@@ -158,6 +158,7 @@ function menu() {
   if (p === "elaborador") itens.push(["catalogo", "Comprar créditos"]);
   if (["elaborador", "fiscal", "registrador", "auditor"].includes(p)) itens.push(["pedidos", "Pedidos de compra"]);
   if (p === "fornecedor") itens.push(["vendas", "Vender créditos"]);
+  if (["elaborador", "fornecedor", "registrador", "auditor"].includes(p)) itens.push(["projetos", "Projetos de geração"]);
   if (["elaborador", "registrador", "fornecedor"].includes(p)) itens.push(["registro", "Créditos em conta"]);
   if (p === "registrador") itens.push(["credenciamentos", "Credenciamentos"]);
   if (p === "registrador") itens.push(["cadastros", "Cadastros e fatores"]);
@@ -1040,6 +1041,111 @@ async function telaCredenciamentos() {
   }));
 }
 
+// ---------------------------------------------------------------- projetos de geração
+const ROTULO_AREA = { publica_propria: "Pública (propriedade e usufruto do ente)", publica_terceiros: "Pública com usufruto de terceiro (concessão etc.)",
+  privada: "Privada", terra_indigena: "Terra indígena", quilombola: "Território quilombola",
+  comunidade_tradicional: "Comunidade tradicional (UC de uso sustentável)", assentamento: "Assentamento da reforma agrária" };
+
+async function telaProjetos() {
+  const [regras, lista] = await Promise.all([api("GET", "/projetos/regras"), api("GET", "/projetos")]);
+  const nomeEtapa = Object.fromEntries(regras.etapas.map((e) => [e.codigo, e.nome]));
+  const podeCriar = ["elaborador", "fornecedor"].includes(papel());
+  conteudo.innerHTML = `<h1>Projetos de geração</h1>
+    <p class="introducao">Organize projetos de biogás, energia, restauração e outros, da ideia à venda dos créditos. A plataforma guarda as evidências e aplica as regras de titularidade e de comunidades da Lei 15.042/2024; quem valida, verifica e emite é a certificadora.</p>
+    <section class="bloco">${lista.length ? `<div class="rolagem"><table><thead><tr><th>Projeto</th><th>Titular</th><th>Local</th><th class="num">tCO2e/ano</th><th>Etapa</th></tr></thead><tbody>
+      ${lista.map((p) => `<tr class="clicavel" data-ir="#/projetos/${p.id}"><td><a href="#/projetos/${p.id}">${esc(p.nome)}</a><div class="memoria">${esc(regras.tipos[p.tipo])}</div></td>
+        <td>${esc(p.titular)}</td><td>${esc(p.municipio)}/${esc(p.uf)}</td><td class="num">${t(p.estimativa_tco2e_ano)}</td><td>${esc(nomeEtapa[p.etapa])}</td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="vazio">Nenhum projeto.${podeCriar ? " Cadastre o primeiro abaixo." : ""}</p>`}</section>
+    ${podeCriar ? `<section class="bloco"><h2>Novo projeto</h2><form id="f-proj" class="grade">
+      <label class="largo">Nome<input name="nome" required placeholder="Ex.: Captação de biogás do aterro municipal"></label>
+      <label>Tipo<select name="tipo">${Object.entries(regras.tipos).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
+      <label>Natureza da área <span class="ajuda">Define quem é o titular dos créditos (art. 43)</span><select name="natureza_area">${Object.entries(ROTULO_AREA).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
+      <label>Município<input name="municipio" required></label><label>UF<input name="uf" maxlength="2" value="MG" required></label>
+      <label>Latitude<input name="latitude" type="number" step="any" min="-34" max="6" required placeholder="-16.73"></label>
+      <label>Longitude<input name="longitude" type="number" step="any" min="-74" max="-28" required placeholder="-43.86"></label>
+      <label>Área (ha)<input name="area_ha" type="number" step="any" min="0"></label>
+      <label>Matrícula do imóvel<input name="matricula"></label><label>CAR <span class="ajuda">Obrigatório em restauração em imóvel rural</span><input name="car"></label>
+      <label>Estimativa (tCO2e/ano)<input name="estimativa_tco2e_ano" type="number" step="any" min="0" required></label>
+      <label class="largo">Linha de base <span class="ajuda">O que acontece hoje, sem o projeto</span><textarea name="linha_base" required></textarea></label>
+      <div class="acoes largo"><button type="submit" class="botao">Cadastrar projeto</button></div><p class="erro-campo largo"></p></form></section>` : ""}`;
+  aoEnviar($("#f-proj"), async (d) => {
+    const r = await api("POST", "/projetos", d); avisar("Projeto cadastrado."); location.hash = `#/projetos/${r.id}`;
+  });
+}
+
+async function telaProjeto(id) {
+  const [regras, p] = await Promise.all([api("GET", "/projetos/regras"), api("GET", `/projetos/${id}`)]);
+  const titular = estado.eu.organizacao?.id === p.titular_id && ["elaborador", "fornecedor"].includes(papel());
+  const idx = regras.etapas.findIndex((e) => e.codigo === p.etapa);
+  const etapas = regras.etapas.map((e, i) => `<li class="${i < idx || p.etapa === "venda" ? "feita" : i === idx ? "atual" : ""}"><strong>${esc(e.nome)}</strong></li>`).join("");
+  const itensAtuais = p.itens.filter((i) => i.etapa === p.etapa);
+  const par = p.parceria;
+  const mapa = `https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=13/${p.latitude}/${p.longitude}`;
+  conteudo.innerHTML = `<p><a href="#/projetos">Voltar aos projetos</a></p>
+    <h1>${esc(p.nome)}</h1>
+    <p class="introducao">${esc(regras.tipos[p.tipo])} · ${esc(p.titular)} · ${esc(p.municipio)}/${esc(p.uf)} · estimativa ${t(p.estimativa_tco2e_ano)} tCO2e/ano</p>
+    <ol class="trilha sete" aria-label="Etapas do projeto">${etapas}</ol>
+    <section class="bloco"><h2>Para avançar</h2>
+      ${p.pendencias.length && p.etapa !== "venda" ? `<ul class="alertas">${p.pendencias.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : p.etapa === "venda" ? `<p>Projeto na etapa de venda. Os créditos podem ser ofertados no catálogo pelo vendedor credenciado.</p>` : `<p>Sem pendências.</p>`}
+      ${titular && p.etapa !== "venda" ? `<button type="button" class="botao" id="b-avancar"${p.pendencias.length ? " disabled" : ""}>Avançar para ${esc(regras.etapas[idx + 1].nome)}</button>` : ""}</section>
+    <div class="colunas">
+      <section class="bloco"><h2>Checklist: ${esc(regras.etapas[idx].nome)}</h2>
+        ${itensAtuais.length ? `<ul class="obrigacoes">${itensAtuais.map((it) => `<li><strong>${esc(it.item)}</strong>
+          ${it.concluido ? `<div class="memoria">Concluído por ${esc(it.responsavel)} em ${data(it.concluido_em)} · <button type="button" class="link" data-baixar="${it.anexo_id}" data-nome="evidencia.pdf">evidência</button></div>`
+            : titular ? `<form class="grade f-item" data-id="${it.id}" style="margin-top:.5rem"><label>Responsável<input name="responsavel" required></label>
+              <label>Evidência<input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required></label>
+              <div class="acoes largo"><button type="submit" class="botao secundario">Concluir item</button></div><p class="erro-campo largo"></p></form>` : `<div class="memoria">Pendente</div>`}</li>`).join("")}</ul>`
+          : `<p class="vazio">Sem itens nesta etapa.</p>`}</section>
+      <section class="bloco"><h2>Dados e registros</h2><dl class="ficha">
+        <div><dt>Natureza da área</dt><dd>${esc(ROTULO_AREA[p.natureza_area])}</dd></div>
+        <div><dt>Localização</dt><dd>${p.latitude}, ${p.longitude} · <a href="${esc(mapa)}" target="_blank" rel="noopener">ver no mapa</a></dd></div>
+        <div><dt>Área</dt><dd>${p.area_ha ? t(p.area_ha) + " ha" : "—"}</dd></div>
+        <div><dt>Matrícula / CAR</dt><dd>${esc(p.matricula || "—")} / ${esc(p.car || "—")}</dd></div>
+        <div><dt>Linha de base</dt><dd>${esc(p.linha_base)}</dd></div>
+        <div><dt>Anuência do órgão gestor</dt><dd>${esc(p.anuencia_ref || "—")}</dd></div>
+        <div><dt>Consulta à comunidade</dt><dd>${p.consulta_anexo_id ? `<button type="button" class="link" data-baixar="${p.consulta_anexo_id}" data-nome="consulta.pdf">ata anexada</button>` : "—"}</dd></div>
+        <div><dt>Certificadora / registro</dt><dd>${esc(p.certificadora || "—")} ${esc(p.registro_ref || "")}</dd></div>
+        <div><dt>Lote emitido</dt><dd class="mono">${esc(p.lote_serial || "—")}</dd></div></dl>
+        ${titular ? `<form id="f-reg" class="grade"><label>Anuência (art. 49)<input name="anuencia_ref" placeholder="Ofício nº…"></label>
+          <label>Certificadora<input name="certificadora" placeholder="Verra, Gold Standard…"></label>
+          <label>Nº de registro na certificadora<input name="registro_ref"></label><label>Serial do lote emitido<input name="lote_serial"></label>
+          ${["terra_indigena", "quilombola", "comunidade_tradicional", "assentamento"].includes(p.natureza_area) ? `<label class="largo">Ata da consulta livre, prévia e informada <span class="ajuda">Obrigatória neste território (art. 47, I, a)</span><input type="file" name="arquivo" accept=".pdf"></label>` : ""}
+          <div class="acoes largo"><button type="submit" class="botao secundario">Salvar registros</button></div><p class="erro-campo largo"></p></form>` : ""}</section>
+    </div>
+    <section class="bloco"><h2>Parceria com desenvolvedor</h2>
+      ${par ? `<p>${esc(par.desenvolvedor)} <span class="mono">${esc(par.desenvolvedor_cnpj)}</span> · titular ${t(par.percentual_titular)}% · desenvolvedor ${t(par.percentual_desenvolvedor)}%${par.percentual_comunidade ? ` · comunidade ${t(par.percentual_comunidade)}%` : ""}</p>
+        <p class="memoria">${par.licitacao_ref ? `Licitação: ${esc(par.licitacao_ref)} · ` : ""}${par.averbacao_ref ? `Averbação: ${esc(par.averbacao_ref)} · ` : ""}${par.assinatura === "assinado" ? `Assinado (${esc(par.assinatura_ref)})` : "Minuta, aguardando assinatura"}</p>
+        ${titular && par.assinatura !== "assinado" ? `<form id="f-ass" class="grade"><label>Referência da assinatura eletrônica<input name="assinatura_ref" required placeholder="gov.br ou Clicksign"></label>
+          <label>Averbação no registro de imóveis<input name="averbacao_ref"></label>
+          <div class="acoes largo"><button type="submit" class="botao">Registrar assinatura</button></div><p class="erro-campo largo"></p></form>` : ""}`
+      : titular ? `<form id="f-par" class="grade">
+        <label>CNPJ do desenvolvedor<input name="desenvolvedor_cnpj" pattern="\\d{14}" required></label><label>Razão social<input name="desenvolvedor_nome" required></label>
+        <label>% do titular<input name="percentual_titular" type="number" min="0" max="100" step="any" required></label>
+        <label>% do desenvolvedor<input name="percentual_desenvolvedor" type="number" min="0" max="100" step="any" required></label>
+        <label>% da comunidade <span class="ajuda">Mín. 50% em remoção em território tradicional (art. 47)</span><input name="percentual_comunidade" type="number" min="0" max="100" step="any" value="0"></label>
+        <label>Processo licitatório <span class="ajuda">Obrigatório em área pública do ente (art. 43, § 1º)</span><input name="licitacao_ref"></label>
+        <div class="acoes largo"><button type="submit" class="botao secundario">Registrar parceria</button></div><p class="erro-campo largo"></p></form>`
+      : `<p class="vazio">Sem parceria.</p>`}</section>`;
+  const recarregar = () => telaProjeto(id);
+  conteudo.querySelectorAll("[data-baixar]").forEach((b) => (b.onclick = () => baixar(`/anexos/${b.dataset.baixar}`, b.dataset.nome).catch((e) => avisar(e.message, true))));
+  conteudo.querySelectorAll(".f-item").forEach((f) => aoEnviar(f, async (d, form) => {
+    const anexo = await anexoDoCampo(form);
+    await api("POST", `/projetos/itens/${f.dataset.id}/conclusao`, { anexo_id: anexo, responsavel: d.responsavel });
+    avisar("Item concluído."); recarregar();
+  }));
+  aoEnviar($("#f-reg"), async (d, form) => {
+    const consulta = await anexoDoCampo(form);
+    await api("PATCH", `/projetos/${id}`, { ...d, consulta_anexo_id: consulta }); avisar("Registros salvos."); recarregar();
+  });
+  aoEnviar($("#f-par"), async (d) => { await api("POST", `/projetos/${id}/parceria`, d); avisar("Parceria registrada."); recarregar(); });
+  aoEnviar($("#f-ass"), async (d) => { await api("POST", `/projetos/${id}/parceria/assinatura`, d); avisar("Assinatura registrada."); recarregar(); });
+  const ba = $("#b-avancar");
+  if (ba) ba.onclick = async () => {
+    try { const r = await api("POST", `/projetos/${id}/avanco`); avisar(`Projeto avançou para ${regras.etapas.find((e) => e.codigo === r.etapa).nome}.`); recarregar(); }
+    catch (e) { avisar(e.message, true); }
+  };
+}
+
 // ---------------------------------------------------------------- transparência e verificação pública
 async function telaTransparencia() {
   const [aud, canc, orgs] = await Promise.all([api("GET", "/registro/auditoria"), api("GET", "/registro/cancelamentos"), api("GET", "/publico/organizacoes")]);
@@ -1121,6 +1227,7 @@ async function navegar() {
       registro: telaRegistro, cadastros: telaCadastros, auditoria: telaAuditoria,
       catalogo: telaCatalogo, pedidos: () => (a ? telaPedido(Number(a)) : telaPedidos()),
       vendas: telaVendas, credenciamentos: telaCredenciamentos,
+      projetos: () => (a ? telaProjeto(Number(a)) : telaProjetos()),
       verificar: () => telaVerificar(a, decodeURIComponent(b || "")),
     };
     await (telas[rota] || telaInicio)();

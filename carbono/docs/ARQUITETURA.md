@@ -37,6 +37,7 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | `registro.py` | Lotes de créditos, transferência, cancelamento, livro-razão encadeado, certificado por hash |
 | `compensacao.py` | Plano e execução da compensação voluntária e da conciliação SBCE |
 | `relatorio.py` | Relatório HTML para impressão em PDF e planilha XLSX |
+| `projetos.py` | Projetos de geração: cadastro, funil com checklist e evidência, parceria, travas dos arts. 43, 47 e 49 |
 | `marketplace.py` | Credenciamento, ofertas, catálogo, pedido no rito da despesa pública, carteira, minuta de TR |
 | `api.py` | Rotas REST e páginas estáticas em `/painel` |
 | `demo.py` | Cenário fictício completo |
@@ -59,6 +60,7 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | Analisar credenciamento | | | | | | ✓ | | |
 | Abrir pedido, instruir, empenhar, pagar, cancelar | ✓ | | | | | | | |
 | Atestar liquidação | | ✓ | | | | | | |
+| Cadastrar e conduzir projeto de geração | ✓ (titular) | | ✓ (titular) | | | | | |
 | Trilha de auditoria | | | | | | ✓ | ✓ | |
 | Verificar selo ou certificado, painel público | | | | | | | | ✓ |
 
@@ -78,7 +80,7 @@ O auditor não grava nada. As funções de escrita checam o papel, e o upload re
 - **Crédito voluntário:** sem `certificadora` e `certificado_anexo_id` não pode ser escriturado. Cancelado, exige `registro_externo_ref` (CHECK no esquema).
 - **Saldo:** nunca fica negativo, e um lote cancelado não volta a circular. Transferências e cancelamentos usam `BEGIN IMMEDIATE` e chave de idempotência.
 - **Pedido de compra:** o banco recusa estados sem os dados da etapa (CHECKs): não há empenho sem número, entrega sem lote, liquidação sem nota fiscal e fiscal, pagamento sem referência, nem empenho menor que o total. O empenho reserva a quantidade da oferta; o cancelamento devolve.
-- **Versão do esquema:** banco de outra versão (hoje 3) é recusado com `EsquemaIncompativel` (não há migração automática no MVP).
+- **Versão do esquema:** banco de outra versão (hoje 4) é recusado com `EsquemaIncompativel` (não há migração automática no MVP).
 
 ## 5. Modelo de dados (resumo)
 
@@ -92,6 +94,8 @@ organizacao ─┬─ usuario (papel)            fator_emissao (codigo, versao, 
              ├─ credenciamento (status, documentos, criterios, valido_ate)
              ├─ oferta (lote_id, categoria, uf, preco_unitario, quantidade_disponivel)
              ├─ pedido (oferta_id, quantidade, valores, taxa, status, processo, empenho, nota_fiscal, pagamento)
+             ├─ projeto (tipo, natureza_area, lat/long, etapa, anuencia_ref, consulta, certificadora) ─┬─ projeto_item (etapa, item, anexo)
+             │                                                                                     └─ parceria (desenvolvedor, %, licitação, averbação, assinatura)
              └─ contrato (orgao_id, fornecedor_id, vigência, clausula_relato, dia_limite)
                    ├─ lancamento_fornecedor (ano, mes, fator_id, anexo_id, lancado_pelo_fiscal)
                    ├─ acao_fornecedor (anexo obrigatório)
@@ -112,7 +116,7 @@ Correspondência com o modelo do prompt CarbonMG:
 | `CreditLot` | `lote` |
 | `Purchase` | `pedido` (rito da despesa pública) + `movimento` (entrega no registro) |
 | `Score` | `score_fornecedor` |
-| `Project` | fica para a fase 3 |
+| `Project` | `projeto` + `projeto_item` + `parceria` |
 
 ## 6. Score da terceirizada (`terceirizadas.calcular_score`)
 

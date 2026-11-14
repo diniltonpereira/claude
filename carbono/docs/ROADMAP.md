@@ -67,7 +67,11 @@ Escopo original:
 - Taxa do marketplace explícita no contrato e no documento fiscal.
 - Carteira do órgão: emitido, compensado, saldo a compensar e histórico (parte já existe no painel).
 
-### Fase 3 — Projetos, documentos e campo (alvo: 180 dias)
+### Fase 3 — Projetos, documentos e campo: projetos concluídos na versão 0.4
+Feito: cadastro georreferenciado (ponto), funil de 7 etapas com checklist e evidência, travas legais (arts. 43, 47 e 49) e parceria com divisão de créditos e registro da assinatura.
+Pendente: polígono da área (GeoJSON) e mapa embutido, integração real de assinatura (gov.br/Clicksign), modelos DOCX, PNCP, CEMIG, login gov.br, PostgreSQL e PWA offline.
+
+Escopo original:
 - Projetos de geração com:
   - georreferenciamento, área, titularidade (matrícula, CAR), linha de base e estimativa;
   - funil (ideia > viabilidade > documento de concepção > validação > verificação > emissão > venda), com checklist e responsável por etapa;
