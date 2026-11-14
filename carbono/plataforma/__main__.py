@@ -7,6 +7,7 @@
     python -m plataforma restaurar ARQUIVO.db [--banco carbono.db] [--anexos anexos]
     python -m plataforma migrar   [--banco carbono.db]                          atualiza o esquema do banco
     python -m plataforma varrer-anexos [--banco carbono.db]                     reexamina anexos no antivírus (1x/dia)
+    python -m plataforma enviar-emails [--banco carbono.db]                     entrega a caixa de saída (o `servir` já faz a cada minuto)
     python -m plataforma demo     [--banco demo.db]                             dados fictícios (modo demonstração)
 
 Variáveis de ambiente: ver .env.example e docs/IMPLANTACAO.md.
@@ -41,6 +42,7 @@ def main() -> None:
     rs.add_argument("--banco", default=banco_padrao); rs.add_argument("--anexos", default=anexos_padrao)
     m = sub.add_parser("migrar"); m.add_argument("--banco", default=banco_padrao)
     v = sub.add_parser("varrer-anexos"); v.add_argument("--banco", default=banco_padrao)
+    e = sub.add_parser("enviar-emails"); e.add_argument("--banco", default=banco_padrao)
     args = p.parse_args()
 
     if args.cmd == "criar-admin":
@@ -66,6 +68,9 @@ def main() -> None:
     elif args.cmd == "varrer-anexos":
         from .anexos import varrer
         print(json.dumps(varrer(conectar(args.banco)), ensure_ascii=False))
+    elif args.cmd == "enviar-emails":
+        from .envio import despachar
+        print(json.dumps(despachar(conectar(args.banco)), ensure_ascii=False))
     elif args.cmd == "migrar":
         conectar(args.banco).close()
         print(f"Banco na versão {VERSAO_ESQUEMA} do esquema.")
@@ -74,8 +79,36 @@ def main() -> None:
         from .api import criar_app
         logging.basicConfig(level=logging.INFO, format="%(message)s")
         app = criar_app(args.banco, modo="demo" if args.demo else None)
+        _despachante_de_emails(args.banco)
         uvicorn.run(app, host=args.host, port=args.porta, proxy_headers=True,
                     forwarded_allow_ips=os.environ.get("CARBONO_PROXY_IPS", "127.0.0.1"))
+
+
+def _despachante_de_emails(banco: str) -> None:
+    """Entrega a caixa de saída a cada minuto, em segundo plano. Desligue com CARBONO_ENVIO_AUTOMATICO=0
+    (e agende `enviar-emails` no cron) se preferir."""
+    import threading
+    import time
+    from .envio import configurado, despachar
+    if os.environ.get("CARBONO_ENVIO_AUTOMATICO", "1") == "0":
+        return
+    if not configurado():
+        logging.getLogger("carbonmg").warning(json.dumps(
+            {"evento": "email_nao_configurado", "detalhe": "defina CARBONO_SMTP_HOST e CARBONO_SMTP_REMETENTE"}))
+        return
+
+    def laco():
+        con = conectar(banco)
+        while True:
+            try:
+                r = despachar(con)
+                if r["enviados"] or r["falhas"] or r["adiados"]:
+                    logging.getLogger("carbonmg").info(json.dumps({"evento": "emails", **r}))
+            except Exception:  # noqa: BLE001 — o laço não pode morrer
+                logging.getLogger("carbonmg").exception("falha no despacho de e-mails")
+            time.sleep(60)
+
+    threading.Thread(target=laco, name="emails", daemon=True).start()
 
 
 if __name__ == "__main__":

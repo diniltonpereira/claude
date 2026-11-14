@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 from .auditoria import registrar
+from .envio import apagar_do_titular, enfileirar_seguranca
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar
 
 SESSAO_HORAS = 8
@@ -222,6 +223,7 @@ def confirmar_totp(con: sqlite3.Connection, usuario_id: int, codigo: str) -> Non
         raise ErroNegocio("Código inválido. Confira o relógio do celular e tente de novo.")
     con.execute("UPDATE usuario SET totp_ativo=1 WHERE id=?", (usuario_id,))
     registrar(con, usuario_id, "ativar_2fa", "usuario", usuario_id)
+    enfileirar_seguranca(con, usuario_id, "2fa", "A verificação em duas etapas foi ativada na sua conta")
 
 
 # ---------------------------------------------------------------- convites
@@ -247,6 +249,7 @@ def definir_senha(con: sqlite3.Connection, token: str, senha: str) -> None:
     con.execute("UPDATE convite SET usado_em=? WHERE id=?", (_iso(_agora()), c["id"]))
     con.execute("DELETE FROM sessao WHERE usuario_id=?", (c["usuario_id"],))
     registrar(con, c["usuario_id"], "definir_senha", "usuario", c["usuario_id"])
+    enfileirar_seguranca(con, c["usuario_id"], "senha", "A senha da sua conta foi definida")
 
 
 # ---------------------------------------------------------------- gov.br (OpenID Connect)
@@ -320,7 +323,10 @@ def meus_dados(con: sqlite3.Connection, usuario_id: int) -> dict:
     u = buscar(con, "usuario", usuario_id)
     return {
         "usuario": {k: u[k] for k in ("id", "nome", "email", "papel", "organizacao_id", "totp_ativo",
-                                      "termos_versao", "termos_aceitos_em")},
+                                      "termos_versao", "termos_aceitos_em", "avisos_email")},
+        "emails": [dict(r) for r in con.execute(
+            "SELECT tipo, assunto, para, situacao, criado_em, enviado_em FROM email_saida WHERE usuario_id=? "
+            "ORDER BY id DESC LIMIT 200", (usuario_id,))],
         "cpf": "não armazenado (apenas código HMAC para conferência no login gov.br)" if u["cpf_hmac"] else None,
         "sessoes": [dict(r) for r in con.execute(
             "SELECT criada_em, ultimo_uso, expira_em, ip FROM sessao WHERE usuario_id=? AND pendente_2fa=0",
@@ -344,6 +350,7 @@ def anonimizar(con: sqlite3.Connection, registrador_id: int, usuario_id: int) ->
                 (f"Usuário anonimizado nº {usuario_id}", _iso(_agora()), usuario_id))
     con.execute("DELETE FROM sessao WHERE usuario_id=?", (usuario_id,))
     con.execute("DELETE FROM convite WHERE usuario_id=?", (usuario_id,))
+    apagar_do_titular(con, usuario_id)
     registrar(con, registrador_id, "anonimizar", "usuario", usuario_id)
 
 
@@ -356,7 +363,8 @@ def politica_privacidade() -> dict:
             "Identificar quem lança, verifica e aprova informações (controle interno e prestação de contas).",
             "Cumprir obrigações legais de transparência e de guarda de documentos públicos.",
         ],
-        "dados": ["nome", "e-mail", "papel e organização", "CPF apenas como código HMAC (login gov.br)",
+        "dados": ["nome", "e-mail (acesso e avisos: convite, lembretes, alertas e notificações do contrato)",
+                  "papel e organização", "CPF apenas como código HMAC (login gov.br)",
                   "endereço IP e data dos atos (trilha de auditoria)"],
         "bases_legais": ["LGPD, art. 7º, II e III, e art. 23 (execução de políticas públicas e obrigação legal)"],
         "direitos": "Acesso e exportação em 'Minha conta'; correção e anonimização pela administração "

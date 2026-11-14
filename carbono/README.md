@@ -60,6 +60,7 @@ python -m plataforma rotina-diaria --banco carbono.db     # cron: 1 vez por dia
 | `CARBONO_ANEXOS` | `anexos/` | Pasta dos comprovantes, gravados com o nome igual ao SHA-256 |
 | `CARBONO_CLAMAV` | — (no compose: `clamav:3310`) | Antivírus dos anexos: `host:porta` do `clamd` ou socket Unix. Obrigatório em produção |
 | `CARBONO_ANTIVIRUS` | `obrigatorio` | `desativado` dispensa o exame (só por decisão registrada) |
+| `CARBONO_SMTP_HOST`, `_PORTA`, `_SEGURANCA`, `_USUARIO`, `_SENHA`, `_REMETENTE` | — | Envio de e-mails pelo SMTP do órgão (convites, lembretes, alertas, notificações formais). Sem isso, as mensagens ficam na fila |
 | `CARBONO_URL_PUBLICA` | endereço da requisição | Endereço público usado nos QR Codes (obrigatório atrás de proxy) |
 | `PLATAFORMA_NOME` | `CarbonMG` | Nome exibido |
 | `CARBONO_TAXA_MARKETPLACE` | `10` | Taxa da plataforma (%) sobre compras de créditos, exibida em todas as etapas |

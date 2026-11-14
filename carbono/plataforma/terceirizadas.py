@@ -17,10 +17,10 @@ import json
 import secrets
 import sqlite3
 from datetime import date, timedelta
-from typing import Protocol
 
 from . import fatores
 from .auditoria import registrar
+from .envio import enfileirar_notificacao
 from .banco import ErroNegocio, NaoAutorizado, buscar, transacao
 from .calculo import calcular_por_fator
 from .registro import abrir_conta
@@ -373,26 +373,17 @@ def verificar_selo(con: sqlite3.Connection, codigo: str, hoje: date | None = Non
 
 
 # ---------------------------------------------------------------- notificações
-class Notificador(Protocol):
-    """Canal de entrega (e-mail, WhatsApp…). Implemente no deploy; exige base legal e opt-in (LGPD)."""
-    def enviar(self, destinatario: str, assunto: str, texto: str) -> None: ...
-
-
-class SemEnvioExterno:
-    """Padrão do MVP: a notificação fica registrada no sistema e aparece no painel."""
-    def enviar(self, destinatario: str, assunto: str, texto: str) -> None:
-        return None
-
-
 def _notificar(con, contrato_id, tipo, destinatario, assunto, texto, *, prazo=None, anexo_id=None,
                emitida_por=None, referencia=None) -> int | None:
     try:
-        return con.execute(
+        nid = con.execute(
             """INSERT INTO notificacao (contrato_id, tipo, destinatario, assunto, texto, prazo, anexo_id,
                emitida_por, referencia) VALUES (?,?,?,?,?,?,?,?,?)""",
             (contrato_id, tipo, destinatario, assunto, texto, prazo, anexo_id, emitida_por, referencia)).lastrowid
     except sqlite3.IntegrityError:
         return None  # já emitida para esta referência
+    enfileirar_notificacao(con, nid)  # e-mail aos destinatários, pela caixa de saída
+    return nid
 
 
 def notificar(con: sqlite3.Connection, usuario_id: int, contrato_id: int, *, assunto: str, texto: str,
@@ -413,15 +404,13 @@ def notificacoes(con: sqlite3.Connection, contrato_id: int) -> list[dict]:
         "SELECT * FROM notificacao WHERE contrato_id=? ORDER BY id DESC", (contrato_id,))]
 
 
-def rotina_diaria(con: sqlite3.Connection, hoje: date | None = None,
-                  notificador: Notificador | None = None) -> dict:
+def rotina_diaria(con: sqlite3.Connection, hoje: date | None = None) -> dict:
     """Executar uma vez por dia (cron). Para cada contrato vigente e aceito:
     - do dia 1 ao prazo: lembrete à terceirizada se o mês anterior ainda não foi lançado;
     - após o prazo sem lançamento: alerta ao fiscal (e marcação de inadimplência se houver cláusula);
     - no primeiro dia do mês: recalcula o score.
-    Não repete notificações para o mesmo mês."""
+    Não repete notificações para o mesmo mês. Cada notificação vai por e-mail (caixa de saída)."""
     hoje = hoje or date.today()
-    notificador = notificador or SemEnvioExterno()
     resumo = {"lembretes": 0, "alertas": 0, "scores": 0}
     for c in con.execute("SELECT * FROM contrato WHERE aceito_em IS NOT NULL AND vigencia_inicio <= ? "
                          "AND vigencia_fim >= ?", (hoje.isoformat(), (hoje - timedelta(days=40)).isoformat())):
@@ -434,7 +423,6 @@ def rotina_diaria(con: sqlite3.Connection, hoje: date | None = None,
             if _notificar(con, c["id"], "lembrete", "fornecedor", f"Lançar emissões de {m:02d}/{a}",
                           f"Lance as emissões de {m:02d}/{a} do contrato {c['numero']} até {sit['prazo']}, "
                           "com a nota fiscal ou fatura anexada.", prazo=sit["prazo"], referencia=ref):
-                notificador.enviar("fornecedor", f"Lançar emissões de {m:02d}/{a}", c["numero"])
                 resumo["lembretes"] += 1
         elif sit and sit["situacao"] in ("inadimplente", "sem_lancamento"):
             texto = (f"A terceirizada não lançou as emissões de {m:02d}/{a} até {sit['prazo']}. "
@@ -442,7 +430,6 @@ def rotina_diaria(con: sqlite3.Connection, hoje: date | None = None,
                         if c["clausula_relato"] else "O contrato não tem cláusula de relato: situação informativa."))
             if _notificar(con, c["id"], "alerta", "fiscal", f"Sem lançamento em {m:02d}/{a}", texto,
                           referencia=ref + "-atraso"):
-                notificador.enviar("fiscal", f"Sem lançamento em {m:02d}/{a}", c["numero"])
                 resumo["alertas"] += 1
         if hoje.day == 1:
             calcular_score(con, c["id"], hoje)

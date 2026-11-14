@@ -25,10 +25,11 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `banco.py` | Esquema (versão 8), conexão, transação com `BEGIN IMMEDIATE`, exceções de domínio |
+| `banco.py` | Esquema (versão 9), conexão, transação com `BEGIN IMMEDIATE`, exceções de domínio |
 | `fatores.py` | Fatores versionados e conjuntos de GWP (AR5 e AR6); carga inicial |
 | `calculo.py` | Cálculo puro por fator ou por gás, com memória de cálculo |
 | `anexos.py` | Upload com checagem de tipo e conteúdo, SHA-256, controle de acesso, detecção de adulteração, revarredura e bloqueio |
+| `envio.py` | E-mail por caixa de saída: fila gravada na transação do ato, despacho SMTP com novas tentativas, preferência do titular e anonimização |
 | `antivirus.py` | Cliente do ClamAV (protocolo INSTREAM do `clamd`, falha fechada) e recusa de conteúdo ativo: JavaScript e anexos em PDF, macros e bombas de compressão em XLSX, imagens corrompidas ou gigantes |
 | `auditoria.py` | Trilha somente-inclusão; IP via `ContextVar` preenchida por middleware |
 | `mrv.py` | Unidades e hierarquia, atividades (inclusão, edição, exclusão), totais, fluxo de verificação e aprovação |
@@ -84,7 +85,7 @@ O auditor não grava nada. As funções de escrita checam o papel, e o upload re
 - **Crédito voluntário:** sem `certificadora` e `certificado_anexo_id` não pode ser escriturado. Cancelado, exige `registro_externo_ref` (CHECK no esquema).
 - **Saldo:** nunca fica negativo, e um lote cancelado não volta a circular. Transferências e cancelamentos usam `BEGIN IMMEDIATE` e chave de idempotência.
 - **Pedido de compra:** o banco recusa estados sem os dados da etapa (CHECKs): não há empenho sem número, entrega sem lote, liquidação sem nota fiscal e fiscal, pagamento sem referência, nem empenho menor que o total. O empenho reserva a quantidade da oferta; o cancelamento devolve.
-- **Versão do esquema (hoje 8):** bancos a partir da versão 2 são migrados automaticamente ao conectar (`banco.migrar`, numa transação). Toda mudança em tabela existente precisa de uma função em `MIGRACOES`. Versões mais antigas são recusadas com `EsquemaIncompativel`.
+- **Versão do esquema (hoje 9):** bancos a partir da versão 2 são migrados automaticamente ao conectar (`banco.migrar`, numa transação). Toda mudança em tabela existente precisa de uma função em `MIGRACOES`. Versões mais antigas são recusadas com `EsquemaIncompativel`.
 
 ## 5. Modelo de dados (resumo)
 

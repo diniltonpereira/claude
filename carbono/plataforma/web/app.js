@@ -351,11 +351,20 @@ async function telaConta() {
       ${u.totp_ativo ? `<p><span class="situacao aprovado">Ativa</span></p>`
         : `<p>Proteja sua conta com um código do aplicativo autenticador do celular.</p>
            <button type="button" class="botao" id="b-2fa">Ativar verificação em duas etapas</button><div id="totp"></div>`}</section>` : ""}
+    ${producao() && u.email ? `<section class="bloco"><h2>Avisos por e-mail</h2>
+      <label class="opcao"><input type="checkbox" id="c-avisos" ${u.avisos_email ? "checked" : ""}> Receber lembretes de prazo e alertas em ${esc(u.email)}</label>
+      <p class="memoria">Convites, notificações formais do fiscal e avisos de segurança da conta são sempre enviados: fazem parte do processo ou protegem o seu acesso.</p></section>` : ""}
     <section class="bloco"><h2>Seus dados (LGPD)</h2>
       <p>Baixe os dados pessoais que a plataforma guarda sobre você. Para correção ou anonimização, fale com a administração.</p>
       <div class="acoes"><button type="button" class="botao secundario" id="b-dados">Baixar meus dados</button>
         <a class="botao secundario" href="#/privacidade">Política de privacidade</a></div></section>`;
   $("#b-dados").onclick = () => baixar("/eu/dados", "meus-dados.json").catch((e) => avisar(e.message, true));
+  const cav = $("#c-avisos");
+  if (cav) cav.onchange = async () => {
+    try { await api("PATCH", "/eu/preferencias", { avisos_email: cav.checked }); await carregarSessao();
+      avisar(cav.checked ? "Você voltará a receber lembretes e alertas por e-mail." : "Lembretes e alertas por e-mail desligados."); }
+    catch (e) { cav.checked = !cav.checked; avisar(e.message, true); }
+  };
   const b = $("#b-2fa");
   if (b) b.onclick = async () => {
     try {
@@ -1070,7 +1079,8 @@ async function telaRegistro() {
 
 // ---------------------------------------------------------------- cadastros e fatores
 async function telaCadastros() {
-  const [orgs, users, fat] = await Promise.all([api("GET", "/organizacoes"), api("GET", "/usuarios"), api("GET", "/fatores?historico=true")]);
+  const [orgs, users, fat, cx] = await Promise.all([api("GET", "/organizacoes"), api("GET", "/usuarios"), api("GET", "/fatores?historico=true"),
+    producao() ? api("GET", "/emails") : null]);
   conteudo.innerHTML = `<h1>Cadastros e fatores</h1>
     <p class="introducao">Organizações abrem conta no registro automaticamente. O número do usuário é o que ele usa para entrar no piloto.</p>
     <div class="colunas"><section class="bloco"><h2>Organizações</h2><div class="rolagem"><table><thead><tr><th>Nome</th><th>Tipo</th><th>CNPJ</th></tr></thead><tbody>
@@ -1096,6 +1106,7 @@ async function telaCadastros() {
         <label>CPF <span class="ajuda">Para entrar com gov.br; guardado só como código</span><input name="cpf" inputmode="numeric"></label>
         <label class="opcao largo"><input type="checkbox" name="acreditado"> Organismo de inspeção acreditado (art. 32, parágrafo único)</label>
         <div class="acoes largo"><button type="submit" class="botao">Cadastrar usuário</button></div><p class="erro-campo largo"></p></form></section></div>
+    ${cx ? secaoEmails(cx) : ""}
     <section class="bloco"><h2>Fatores de emissão</h2>
       <p class="memoria">Publicar um valor novo cria outra versão. A anterior é preservada e continua ligada aos inventários que a usaram.</p>
       <div class="rolagem"><table><thead><tr><th>Código</th><th>Versão</th><th>Descrição</th><th class="num">Valor</th><th>Fonte</th><th>Situação</th></tr></thead><tbody>
@@ -1116,8 +1127,14 @@ async function telaCadastros() {
     try {
       const r = await api("POST", `/usuarios/${b.dataset.convite}/convite`);
       await navigator.clipboard?.writeText(r.link).catch(() => {});
-      await confirmar("Convite gerado", `Envie este link ao usuário (vale ${r.validade_horas} horas e só pode ser usado uma vez): ${r.link}`, "Entendi");
+      const como = { na_fila: "O convite foi enviado por e-mail.", aguardando_configuracao: "O e-mail ficará na fila até o envio ser configurado (CARBONO_SMTP_HOST); enquanto isso, envie o link você mesmo." }[r.email] || "Envie o link ao usuário.";
+      await confirmar("Convite gerado", `${como} O link vale ${r.validade_horas} horas e só pode ser usado uma vez (copiado para a área de transferência): ${r.link}`, "Entendi");
+      if (producao()) telaCadastros();
     } catch (e) { avisar(e.message, true); }
+  }));
+  conteudo.querySelectorAll("[data-reenviar]").forEach((b) => (b.onclick = async () => {
+    try { await api("POST", `/emails/${b.dataset.reenviar}/reenvio`); avisar("E-mail devolvido à fila de envio."); telaCadastros(); }
+    catch (e) { avisar(e.message, true); }
   }));
   conteudo.querySelectorAll("[data-anonimizar]").forEach((b) => (b.onclick = async () => {
     if (!(await confirmar(`Anonimizar ${b.dataset.nome}?`, "Nome, e-mail, CPF e credenciais serão apagados e o acesso encerrado. Os atos já praticados permanecem na trilha de auditoria (obrigação legal).", "Anonimizar usuário"))) return;
@@ -1129,6 +1146,24 @@ async function telaCadastros() {
     if (!ok) return;
     await api("POST", "/fatores", d); estado.fatores = null; avisar("Nova versão publicada."); telaCadastros();
   });
+}
+
+const ROTULO_EMAIL = { convite: "Convite", lembrete: "Lembrete", alerta: "Alerta", notificacao_formal: "Notificação formal", seguranca: "Segurança" };
+const SITUACAO_EMAIL = { pendente: ["Na fila", "submetido"], enviando: ["Enviando", "submetido"], enviado: ["Enviado", "aprovado"],
+  falhou: ["Falhou", "devolvido"], cancelado: ["Cancelado", "rascunho"] };
+function secaoEmails({ resumo: r, emails }) {
+  const dataHora = (s) => (s ? new Date(s).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—");
+  return `<section class="bloco"><h2>E-mails enviados pela plataforma</h2>
+    ${r.configurado ? "" : `<p class="erro-campo">O envio de e-mails não está configurado (CARBONO_SMTP_HOST e CARBONO_SMTP_REMETENTE). As mensagens ficam na fila e saem quando for configurado.</p>`}
+    <p class="memoria">${r.pendente} na fila · ${r.enviado} enviados · ${r.falhou} com falha. O conteúdo não aparece aqui porque o convite leva um link de acesso.</p>
+    <div class="rolagem"><table><thead><tr><th>Quando</th><th>Para</th><th>Tipo</th><th>Assunto</th><th>Situação</th></tr></thead><tbody>
+    ${emails.slice(0, 50).map((e) => { const [rot, cls] = SITUACAO_EMAIL[e.situacao];
+      return `<tr><td>${dataHora(e.enviado_em || e.criado_em)}</td><td>${esc(e.usuario || "")}<div class="memoria">${esc(e.para)}</div></td>
+      <td>${ROTULO_EMAIL[e.tipo]}</td><td>${esc(e.assunto)}</td>
+      <td><span class="situacao ${cls}">${rot}</span>${e.ultimo_erro ? `<div class="memoria">${esc(e.ultimo_erro)}</div>` : ""}
+      ${e.situacao === "falhou" ? `<div><button type="button" class="link" data-reenviar="${e.id}">Tentar de novo</button></div>` : ""}</td></tr>`; }).join("")
+      || `<tr><td colspan="5" class="vazio">Nenhum e-mail ainda.</td></tr>`}
+    </tbody></table></div></section>`;
 }
 
 // ---------------------------------------------------------------- auditoria

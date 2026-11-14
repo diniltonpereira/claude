@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 8
+VERSAO_ESQUEMA = 9
 VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS usuario (
     termos_versao   TEXT,
     termos_aceitos_em TEXT,
     ativo           INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0,1)),
-    anonimizado_em  TEXT
+    anonimizado_em  TEXT,
+    -- lembretes e alertas por e-mail (versão 9); o titular pode desligar em "Minha conta"
+    avisos_email    INTEGER NOT NULL DEFAULT 1 CHECK (avisos_email IN (0,1))
 );
 
 -- Fatores de emissão VERSIONADOS: nova versão nunca apaga a anterior (auditoria).
@@ -444,6 +446,30 @@ CREATE TABLE IF NOT EXISTS anexo_alerta (
     detectado_em    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- ---------------------------------------------------------------- e-mail (versão 9)
+-- Caixa de saída: gravada na mesma transação do ato; o despachante entrega pelo SMTP (envio.py).
+CREATE TABLE IF NOT EXISTS email_saida (
+    id              INTEGER PRIMARY KEY,
+    chave           TEXT NOT NULL UNIQUE,   -- idempotência por origem e destinatário
+    usuario_id      INTEGER NOT NULL REFERENCES usuario(id),
+    para            TEXT NOT NULL,
+    tipo            TEXT NOT NULL CHECK (tipo IN ('convite','lembrete','alerta','notificacao_formal','seguranca')),
+    assunto         TEXT NOT NULL CHECK (length(assunto) BETWEEN 1 AND 200
+                                         AND instr(assunto, char(10)) = 0 AND instr(assunto, char(13)) = 0),
+    texto           TEXT NOT NULL,
+    situacao        TEXT NOT NULL DEFAULT 'pendente'
+                    CHECK (situacao IN ('pendente','enviando','enviado','falhou','cancelado')),
+    tentativas      INTEGER NOT NULL DEFAULT 0 CHECK (tentativas >= 0),
+    proxima_tentativa TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    reservado_em    TEXT,
+    ultimo_erro     TEXT,
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    enviado_em      TEXT,
+    CHECK ((situacao = 'enviado') = (enviado_em IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS email_saida_fila ON email_saida (situacao, proxima_tentativa);
+CREATE INDEX IF NOT EXISTS email_saida_usuario ON email_saida (usuario_id);
+
 -- ---------------------------------------------------------------- faturas de energia (versão 7)
 CREATE UNIQUE INDEX IF NOT EXISTS ux_instalacao_uc ON instalacao(organizacao_id, uc_energia) WHERE uc_energia IS NOT NULL;
 
@@ -531,9 +557,15 @@ def _migrar_6_para_7(con: sqlite3.Connection) -> None:
         con.execute("ALTER TABLE instalacao ADD COLUMN uc_energia TEXT")
 
 
+def _migrar_8_para_9(con: sqlite3.Connection) -> None:
+    if "avisos_email" not in {r["name"] for r in con.execute("PRAGMA table_info(usuario)")}:
+        con.execute("ALTER TABLE usuario ADD COLUMN avisos_email INTEGER NOT NULL DEFAULT 1 "
+                    "CHECK (avisos_email IN (0,1))")
+
+
 # Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
 # próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
-MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None}
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9}
 
 
 def migrar(con: sqlite3.Connection, caminho: str = "") -> int:

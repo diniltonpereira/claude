@@ -81,6 +81,7 @@ O cookie de sessão é `Secure`: em produção, o acesso **tem** de ser por HTTP
 | Rotina | Comando | Frequência |
 | --- | --- | --- |
 | Lembretes, alertas e score das terceirizadas | `docker compose exec carbonmg python -m plataforma rotina-diaria` | diária (cron do servidor) |
+| Entrega de e-mails | automática pelo `servir`, a cada minuto (ou `enviar-emails` no cron, com `CARBONO_ENVIO_AUTOMATICO=0`) | contínua |
 | Revarredura dos anexos com as assinaturas do dia | `docker compose exec carbonmg python -m plataforma varrer-anexos` | diária, depois da atualização do ClamAV |
 | Backup | `docker compose exec carbonmg python -m plataforma backup --destino /backups` | diária; copie a pasta `backups/` para outro local em região BR |
 | Teste de restauração | ver 4.1 | mensal |
@@ -141,7 +142,8 @@ O banco anterior fica salvo com o sufixo `.antes-da-restauracao`.
   - exportação: o próprio usuário faz em "Minha conta";
   - anonimização: a administração faz em Cadastros. Os atos ficam na trilha (LGPD, art. 16, I).
 - [ ] Registrar as operações de tratamento (art. 37) e avaliar se cabe um relatório de impacto (art. 38).
-- [ ] WhatsApp e e-mail automáticos: só com opt-in e base legal (a interface `Notificador` está pronta, sem envio).
+- [ ] E-mails (seção 10): confirmar com a assessoria jurídica a base legal (execução do contrato e obrigação legal, LGPD, art. 7º, II e V, e art. 23). Lembretes e alertas podem ser desligados pelo titular; convites, notificações formais e avisos de segurança não.
+- [ ] WhatsApp: ainda sem envio; exigiria opt-in e a API oficial.
 
 ## 7. Uso em campo, sem conexão (PWA)
 
@@ -184,3 +186,21 @@ O banco anterior fica salvo com o sufixo `.antes-da-restauracao`.
 `python -m plataforma demo --banco demo.db` e `python -m plataforma servir --banco demo.db --demo`.
 
 Nesse modo, a entrada é pelo número do usuário (cabeçalho `X-Usuario-Id`), sem senha. **Nunca use em produção.** O modo produção é o padrão e ignora esse cabeçalho.
+
+## 10. E-mails
+
+- **Configuração:** preencha `CARBONO_SMTP_*` no `.env` com o SMTP do órgão ou de um serviço contratado (com contrato que trate de dados pessoais, LGPD art. 39). Use um remetente do domínio do órgão (`nao-responda@...`) e configure SPF, DKIM e DMARC nesse domínio, ou os e-mails cairão no spam. A senha do SMTP vai só no `.env`, nunca no repositório.
+- **O que é enviado:**
+
+| Mensagem | Para quem | Pode ser desligada? |
+| --- | --- | --- |
+| Convite com o link para criar a senha | o usuário convidado | não |
+| Lembrete do prazo de lançamento (até o dia limite do contrato) | usuários da terceirizada | sim, em "Minha conta" |
+| Alerta de mês sem lançamento e de queda do score | fiscais do órgão contratante | sim, em "Minha conta" |
+| Notificação formal do fiscal (texto e prazo) | usuários da terceirizada | não: é ato do processo |
+| Aviso de segurança (senha definida, verificação em duas etapas ativada) | o próprio usuário | não |
+
+- **Como funciona (caixa de saída):** a mensagem é gravada junto com o ato que a gera. Se o ato for desfeito, não há e-mail; se o SMTP estiver fora do ar, a mensagem espera. O envio é tentado de novo após 5, 10, 20, 40 e 80 minutos; recusa definitiva do servidor (endereço inexistente) não é repetida.
+- **Acompanhamento:** em **Cadastros**, a seção "E-mails enviados pela plataforma" mostra fila, enviados e falhas, com o motivo. Corrija o e-mail do usuário e use "Tentar de novo". O conteúdo não aparece nessa tela, e o link do convite é apagado do banco assim que o e-mail é entregue.
+- **Sem SMTP configurado:** nada se perde. O convite continua mostrando o link para envio manual, e a fila sai quando o SMTP for configurado. Os lembretes e alertas também continuam visíveis na página do contrato.
+- **Teste local:** `docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit` e `CARBONO_SMTP_HOST=127.0.0.1`, `CARBONO_SMTP_PORTA=1025`, `CARBONO_SMTP_SEGURANCA=nenhuma`. As mensagens aparecem em http://127.0.0.1:8025.

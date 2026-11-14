@@ -46,7 +46,7 @@ Este documento registra o que foi aproveitado da especificação "Prompt mestre 
 | Pagamento por PIX ou boleto antes de entregar | Não implementado (fase 2) | Para órgão público: contratação, empenho prévio (Lei 4.320, art. 60), cancelamento comprovado, liquidação (art. 63) e pagamento |
 | Catálogo só de parceiros nomeados | Não implementado (fase 2) | Lista fechada gera risco de direcionamento; usar credenciamento aberto (Lei 14.133, art. 79) |
 | Gerar ETP e TR da contratação da própria plataforma | Não implementado | Risco de impedimento e direcionamento (Lei 14.133, arts. 7º e 14). Modelos para **outras** compras do órgão podem vir na fase 3, com aviso |
-| WhatsApp automático | Interface `Notificador` pronta, sem envio | Exige base legal, opt-in (LGPD) e a API oficial |
+| WhatsApp automático | E-mail feito na 0.9 (caixa de saída); WhatsApp ainda sem envio | Exige base legal, opt-in (LGPD) e a API oficial |
 
 ## 3. Próximas fases
 
@@ -69,7 +69,7 @@ Escopo original:
 
 ### Fase 3 — Projetos, documentos e campo: projetos concluídos na versão 0.4
 Feito: cadastro georreferenciado (ponto), funil de 7 etapas com checklist e evidência, travas legais (arts. 43, 47 e 49) e parceria com divisão de créditos e registro da assinatura.
-Pendente: polígono da área (GeoJSON) e mapa embutido, integração real de assinatura (gov.br/Clicksign), modelos DOCX e PNCP. Login gov.br (0.5), PWA offline (0.6) e faturas CEMIG (0.7) e antivírus nos anexos (0.8) já foram feitos; PostgreSQL foi adiado com critério em IMPLANTACAO.md.
+Pendente: polígono da área (GeoJSON) e mapa embutido, integração real de assinatura (gov.br/Clicksign), modelos DOCX e PNCP. Login gov.br (0.5), PWA offline (0.6) e faturas CEMIG (0.7) antivírus nos anexos (0.8) e envio de e-mails (0.9) já foram feitos; PostgreSQL foi adiado com critério em IMPLANTACAO.md.
 
 Escopo original:
 - Projetos de geração com:

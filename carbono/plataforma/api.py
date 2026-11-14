@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (acesso, anexos, antivirus, auditoria, compensacao, faturas, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+from . import (acesso, anexos, antivirus, auditoria, compensacao, envio, faturas, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
                terceirizadas)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar, transacao
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
@@ -371,6 +371,10 @@ class CodigoIn(BaseModel):
     codigo: str = Field(pattern=r"^\d{6}$")
 
 
+class PreferenciasIn(BaseModel):
+    avisos_email: bool
+
+
 class TermosIn(BaseModel):
     versao: str
 
@@ -582,8 +586,20 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     def convite(uid: int, request: Request, u=Depends(registrador), c=Depends(db)):
         _exigir_producao()
         token = acesso.gerar_convite(c, u["id"], uid)
-        return {"link": f"{_base_publica(request)}/painel/#/definir-senha/{token}",
-                "validade_horas": acesso.CONVITE_HORAS}
+        link = f"{_base_publica(request)}/painel/#/definir-senha/{token}"
+        na_fila = envio.enfileirar_convite(c, uid, link, acesso.CONVITE_HORAS)
+        return {"link": link, "validade_horas": acesso.CONVITE_HORAS,
+                "email": ("na_fila" if envio.configurado() else "aguardando_configuracao") if na_fila else "nao_enviado"}
+
+    @app.get("/emails")
+    def caixa_de_saida(situacao: str | None = None, u=Depends(registrador), c=Depends(db)):
+        """Caixa de saída de e-mails (sem o corpo das mensagens)."""
+        return {"resumo": envio.resumo(c), "emails": envio.listar(c, situacao)}
+
+    @app.post("/emails/{eid}/reenvio")
+    def reenviar_email(eid: int, u=Depends(registrador), c=Depends(db)):
+        envio.reenviar(c, u["id"], eid)
+        return {"ok": True}
 
     @app.patch("/usuarios/{uid}")
     def editar_usuario(uid: int, d: UsuarioEdicaoIn, u=Depends(registrador), c=Depends(db)):
@@ -615,6 +631,11 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     @app.post("/eu/termos")
     def aceitar_termos(d: TermosIn, u=Depends(usuario), c=Depends(db)):
         acesso.aceitar_termos(c, u["id"], d.versao)
+        return {"ok": True}
+
+    @app.patch("/eu/preferencias")
+    def preferencias(d: PreferenciasIn, u=Depends(usuario), c=Depends(db)):
+        envio.definir_preferencia(c, u["id"], d.avisos_email)
         return {"ok": True}
 
     @app.get("/eu/dados")
@@ -727,7 +748,8 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
             org = dict(buscar(c, "organizacao", u["organizacao_id"]))
             r = c.execute("SELECT id FROM conta WHERE organizacao_id=?", (org["id"],)).fetchone()
             conta = r["id"] if r else None
-        publico = {k: u[k] for k in ("id", "nome", "papel", "organizacao_id", "acreditado", "email", "totp_ativo")}
+        publico = {k: u[k] for k in ("id", "nome", "papel", "organizacao_id", "acreditado", "email", "totp_ativo",
+                                   "avisos_email")}
         return {"usuario": publico, "organizacao": org, "conta_id": conta, "plataforma": NOME, "modo": modo,
                 "csrf": request.state.csrf, "termos_pendentes": producao and acesso.termos_pendentes(u)}
 
