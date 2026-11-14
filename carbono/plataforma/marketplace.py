@@ -351,7 +351,11 @@ def ver_pedido(con: sqlite3.Connection, usuario_id: int, pedido_id: int) -> dict
     u = _u(con, usuario_id)
     if not (u["papel"] in ("registrador", "auditor") or u["organizacao_id"] in (r["orgao_id"], r["fornecedor_id"])):
         raise NaoAutorizado("Pedido de outra organização.")
-    return dict(r)
+    from .pncp import alerta_pedido
+    d = dict(r)
+    d["pncp"] = json.loads(d.pop("pncp_dados")) if d.get("pncp_dados") else None
+    d["alerta_pncp"] = alerta_pedido(d)
+    return d
 
 
 # ---------------------------------------------------------------- carteira

@@ -25,7 +25,7 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `banco.py` | Esquema (versão 11), conexão, transação com `BEGIN IMMEDIATE`, exceções de domínio |
+| `banco.py` | Esquema (versão 12), conexão, transação com `BEGIN IMMEDIATE`, exceções de domínio |
 | `fatores.py` | Fatores versionados e conjuntos de GWP (AR5 e AR6); carga inicial |
 | `calculo.py` | Cálculo puro por fator ou por gás, com memória de cálculo |
 | `anexos.py` | Upload com checagem de tipo e conteúdo, SHA-256, controle de acesso, detecção de adulteração, revarredura e bloqueio |
@@ -40,6 +40,7 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | `terceirizadas.py` | Contratos, lançamentos, situação mensal, score, selo, notificações, rotina diária, importação para o escopo 3 |
 | `registro.py` | Lotes de créditos, transferência, cancelamento, livro-razão encadeado, certificado por hash |
 | `compensacao.py` | Plano e execução da compensação voluntária e da conciliação SBCE |
+| `pncp.py` | PNCP pelas APIs públicas: vínculo do pedido à contratação divulgada (confere órgão e situação) e pesquisa de preços com itens de contratações similares (valor homologado ou estimado, por tCO2e, válida por 12 meses) |
 | `modelos.py` | Modelos editáveis em Word (.docx): ETP da compensação (art. 18, § 1º), Termo de Referência (art. 6º, XXIII) e relatório de emissões, com campos a preencher destacados |
 | `relatorio.py` | Relatório HTML para impressão em PDF e planilha XLSX |
 | `projetos.py` | Projetos de geração: cadastro, funil com checklist e evidência, parceria, travas dos arts. 43, 47 e 49 |
@@ -88,7 +89,7 @@ O auditor não grava nada. As funções de escrita checam o papel, e o upload re
 - **Crédito voluntário:** sem `certificadora` e `certificado_anexo_id` não pode ser escriturado. Cancelado, exige `registro_externo_ref` (CHECK no esquema).
 - **Saldo:** nunca fica negativo, e um lote cancelado não volta a circular. Transferências e cancelamentos usam `BEGIN IMMEDIATE` e chave de idempotência.
 - **Pedido de compra:** o banco recusa estados sem os dados da etapa (CHECKs): não há empenho sem número, entrega sem lote, liquidação sem nota fiscal e fiscal, pagamento sem referência, nem empenho menor que o total. O empenho reserva a quantidade da oferta; o cancelamento devolve.
-- **Versão do esquema (hoje 11):** bancos a partir da versão 2 são migrados automaticamente ao conectar (`banco.migrar`, numa transação). Toda mudança em tabela existente precisa de uma função em `MIGRACOES`. Versões mais antigas são recusadas com `EsquemaIncompativel`.
+- **Versão do esquema (hoje 12):** bancos a partir da versão 2 são migrados automaticamente ao conectar (`banco.migrar`, numa transação). Toda mudança em tabela existente precisa de uma função em `MIGRACOES`. Versões mais antigas são recusadas com `EsquemaIncompativel`.
 
 ## 5. Modelo de dados (resumo)
 

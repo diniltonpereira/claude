@@ -267,3 +267,20 @@ Assinatura eletrônica **avançada** (Lei 14.063/2020, art. 4º, II), gratuita, 
 - **Números da plataforma:** emissões por escopo, quantidade a compensar (escopos 1 e 2, menos o que já foi compensado), pesquisa de preços do catálogo por categoria, fatores com versão e fonte, trilha de verificação e aprovação.
 - **Campos em amarelo `[PREENCHER: …]`:** o que só a área demandante sabe (processo, plano de contratações anual, dotação, fiscal, outras fontes de preço, conclusão).
 - **São minutas:** o ETP e o TR trazem o aviso de controle prévio de legalidade (art. 53). O TR é neutro: não exige compra por esta plataforma nem cita fornecedores. Os textos foram escritos a partir da estrutura dos artigos; **confira a redação vigente da lei** antes de usar.
+
+## 14. PNCP
+
+A plataforma usa só as **APIs públicas de consulta** do PNCP, sem credencial. A **publicação** continua sendo feita pelo sistema de compras do órgão, com a credencial dele. O servidor precisa de saída para `pncp.gov.br`.
+
+- **Vínculo do pedido (Lei 14.133/2021, art. 94):**
+  - na página do pedido, informe o nº de controle (`CNPJ-1-SEQUENCIAL/ANO`) ou cole o link da contratação no portal;
+  - a plataforma confere no PNCP que a contratação existe e é do próprio órgão (mesmo CNPJ), e guarda objeto, modalidade, situação, valores e data;
+  - pedido empenhado ou em fase posterior sem vínculo mostra alerta, porque a divulgação no PNCP é condição de eficácia do contrato;
+  - conferir de novo atualiza o retrato. Tudo fica na trilha de auditoria.
+- **Pesquisa de preços (art. 23, § 1º, II):**
+  1. Em "Pesquisa de preços", cole o nº de controle de uma compra de créditos de carbono feita por outro ente. A busca por palavra-chave do portal não tem API pública: localize a compra em pncp.gov.br.
+  2. A plataforma lista os itens com o valor estimado e o homologado (com o fornecedor).
+  3. Em "Registrar", informe quantas tCO2e cada unidade representa.
+  
+  O valor homologado tem prioridade; item com orçamento sigiloso não pode ser usado. Fontes com mais de 12 meses ou descartadas saem da estimativa.
+- **No ETP e no TR:** as fontes vigentes aparecem numa tabela, com órgão, nº de controle e item, tipo de valor, R$/tCO2e e data. O ETP mostra também a mediana de todas as fontes (catálogo e PNCP). O preço de referência final continua sendo decisão motivada da área demandante.

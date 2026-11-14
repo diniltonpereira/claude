@@ -111,6 +111,21 @@ def _precos_catalogo(con: sqlite3.Connection, categoria: str | None = None) -> d
     return {"n": len(precos), "min": min(precos), "mediana": statistics.median(precos), "max": max(precos)}
 
 
+def _fontes_pncp(d: "_Doc", con: sqlite3.Connection, organizacao_id: int) -> list[float]:
+    """Tabela das contratações similares do PNCP (art. 23, § 1º, II). Devolve os preços por tCO2e."""
+    from .pncp import fontes
+    fs = fontes(con, organizacao_id)
+    if not fs:
+        d.par("Contratações similares no PNCP (art. 23, § 1º, II): ",
+              ("preencher", "nenhuma registrada na plataforma; registre em \"Pesquisa de preços\" ou descreva"))
+        return []
+    d.par(f"Contratações similares divulgadas no PNCP (art. 23, § 1º, II), coletadas nos últimos 12 meses ({len(fs)}):")
+    d.tabela(["Órgão contratante", "Nº de controle e item", "Item", "Valor", "R$/tCO2e", "Data"],
+             [[f["orgao_contratante"], f["referencia"], f["item_descricao"][:80], f["tipo_valor"],
+               _brl(f["preco_por_tco2e"]), f["data_referencia"]] for f in fs])
+    return [f["preco_por_tco2e"] for f in fs]
+
+
 # ---------------------------------------------------------------- ETP
 def etp_compensacao(con: sqlite3.Connection, inventario_id: int) -> bytes:
     """ETP da aquisição de créditos para compensar as emissões do inventário aprovado (escopos 1 e 2)."""
@@ -184,7 +199,8 @@ def etp_compensacao(con: sqlite3.Connection, inventario_id: int) -> bytes:
             if pc:
                 linhas.append([nome, str(pc["n"]), _brl(pc["min"]), _brl(pc["mediana"]), _brl(pc["max"])])
         d.tabela(["Categoria", "Ofertas", "Mínimo", "Mediana", "Máximo"], linhas)
-    d.par("Outras fontes do art. 23, § 1º: ", ("preencher", "painel de preços, contratações similares, cotações diretas"),
+    precos_pncp = _fontes_pncp(d, con, org["id"])
+    d.par("Outras fontes do art. 23, § 1º: ", ("preencher", "painel de preços, cotações diretas, mídia especializada"),
           ". Solução escolhida e justificativa técnica e econômica: ", ("preencher", "tipo de crédito e categoria"), ".")
 
     d.secao("VI. Estimativa do valor (art. 18, § 1º, VI)")
@@ -195,6 +211,10 @@ def etp_compensacao(con: sqlite3.Connection, inventario_id: int) -> bytes:
             ["Valor estimado dos créditos", _brl(creditos)],
             [f"Taxa de intermediação, se adquirido pela plataforma ({taxa:g}%)", _brl(creditos * taxa / 100)],
             ["Valor total estimado", _brl(creditos * (1 + taxa / 100))]])
+    if precos_pncp:
+        todas = precos_pncp + [r[0] for r in con.execute("SELECT preco_unitario FROM oferta WHERE ativa=1")]
+        d.par(f"Mediana de todas as fontes vigentes (catálogo e PNCP, {len(todas)} preços): "
+              f"{_brl(statistics.median(todas))} por tCO2e; para {_num(qtd, 0)} tCO2e, {_brl(qtd * statistics.median(todas))}.")
     d.par("O preço de referência final deve resultar da pesquisa completa (art. 23): ",
           ("preencher", "valor de referência adotado e memória"), ".")
 
@@ -272,7 +292,8 @@ def tr_pedido(con: sqlite3.Connection, usuario_id: int, pedido_id: int) -> bytes
     if precos:
         d.par(f"Fonte 1 (catálogo da plataforma, mesma categoria): {precos['n']} oferta(s), mínimo {_brl(precos['min'])}, "
               f"mediana {_brl(precos['mediana'])}, máximo {_brl(precos['max'])} por tCO2e.")
-    d.par("Fontes 2 e 3 (art. 23, § 1º): ", ("preencher", "painel de preços, contratações similares ou cotações"))
+    _fontes_pncp(d, con, p["orgao_id"])
+    d.par("Demais fontes (art. 23, § 1º): ", ("preencher", "painel de preços, cotações diretas ou mídia especializada"))
     d.secao("j) Adequação orçamentária")
     d.par("Dotação: ", ("preencher", "programa de trabalho, natureza da despesa e fonte de recursos"))
     d.par("Local e data: ", ("preencher", "local, data, nome e assinatura"))

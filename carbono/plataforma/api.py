@@ -24,7 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (acesso, anexos, antivirus, assinatura, auditoria, compensacao, envio, faturas, geo, modelos, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+from . import (acesso, anexos, antivirus, assinatura, auditoria, compensacao, envio, faturas, geo, modelos, pncp, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
                terceirizadas)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar, transacao
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
@@ -370,6 +370,16 @@ class DefinirSenhaIn(BaseModel):
 
 class CodigoIn(BaseModel):
     codigo: str = Field(pattern=r"^\d{6}$")
+
+
+class PncpIn(BaseModel):
+    numero: str = Field(min_length=10, max_length=300)
+
+
+class FontePrecoIn(BaseModel):
+    numero: str = Field(min_length=10, max_length=300)
+    numero_item: int = Field(ge=1)
+    tco2e_por_unidade: float = Field(default=1.0, gt=0)
 
 
 class DocumentoAssinaturaIn(BaseModel):
@@ -1201,6 +1211,33 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     @app.get("/pedidos/{pid}")
     def ver_pedido(pid: int, u=Depends(usuario), c=Depends(db)):
         return marketplace.ver_pedido(c, u["id"], pid)
+
+    @app.post("/pedidos/{pid}/pncp")
+    def vincular_pncp(pid: int, d: PncpIn, u=Depends(usuario), c=Depends(db)):
+        """Vincula o pedido à contratação divulgada pelo órgão no PNCP (confere no portal)."""
+        return pncp.vincular_pedido(c, u["id"], pid, d.numero)
+
+    @app.get("/pncp/itens")
+    def itens_pncp(numero: str, u=Depends(usuario)):
+        """Itens de uma contratação de outro ente, para a pesquisa de preços (art. 23, § 1º, II)."""
+        if u["papel"] != "elaborador":
+            raise NaoAutorizado("Só o elaborador do órgão faz a pesquisa de preços.")
+        return pncp.itens_da_compra(numero)
+
+    @app.get("/pesquisa-precos")
+    def listar_fontes(todas: bool = False, u=Depends(usuario), c=Depends(db)):
+        if not u["organizacao_id"]:
+            return []
+        return pncp.fontes(c, u["organizacao_id"], vigentes=not todas)
+
+    @app.post("/pesquisa-precos", status_code=201)
+    def registrar_fonte(d: FontePrecoIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": pncp.registrar_fonte(c, u["id"], **d.model_dump())}
+
+    @app.post("/pesquisa-precos/{fid}/descarte")
+    def descartar_fonte(fid: int, u=Depends(usuario), c=Depends(db)):
+        pncp.descartar_fonte(c, u["id"], fid)
+        return {"ok": True}
 
     @app.get("/pedidos/{pid}/tr.docx")
     def tr_docx(pid: int, u=Depends(usuario), c=Depends(db)):

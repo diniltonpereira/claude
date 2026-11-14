@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 11
+VERSAO_ESQUEMA = 12
 VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
@@ -369,6 +369,10 @@ CREATE TABLE IF NOT EXISTS pedido (
     pagamento_ref   TEXT,                   -- ordem bancária / documento do sistema financeiro
     pagamento_data  TEXT,
     motivo_cancelamento TEXT,
+    -- versão 12: contratação divulgada no PNCP (condição de eficácia do contrato, Lei 14.133, art. 94)
+    pncp_controle   TEXT,                   -- nº de controle PNCP, ex.: 11111111000191-1-000012/2026
+    pncp_dados      TEXT CHECK (pncp_dados IS NULL OR json_valid(pncp_dados)),
+    pncp_conferido_em TEXT,
     criado_por      INTEGER NOT NULL REFERENCES usuario(id),
     criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     CHECK (status NOT IN ('empenhado','entregue','liquidado','pago') OR empenho_numero IS NOT NULL),
@@ -466,6 +470,30 @@ CREATE TABLE IF NOT EXISTS anexo_alerta (
     anexo_sha256    TEXT NOT NULL UNIQUE,
     ameaca          TEXT NOT NULL,
     detectado_em    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- ---------------------------------------------------------------- pesquisa de preços (versão 12)
+-- Fontes do art. 23, § 1º, da Lei 14.133/2021 colhidas pela plataforma; hoje: contratações similares
+-- divulgadas no PNCP (inciso II). Cada fonte guarda a referência verificável e a data da coleta.
+CREATE TABLE IF NOT EXISTS pesquisa_preco (
+    id              INTEGER PRIMARY KEY,
+    organizacao_id  INTEGER NOT NULL REFERENCES organizacao(id),
+    fonte           TEXT NOT NULL CHECK (fonte IN ('pncp')),
+    referencia      TEXT NOT NULL,          -- nº de controle PNCP + nº do item
+    link            TEXT NOT NULL,
+    orgao_contratante TEXT NOT NULL,
+    objeto          TEXT NOT NULL,
+    item_descricao  TEXT NOT NULL,
+    unidade         TEXT NOT NULL,
+    tco2e_por_unidade REAL NOT NULL CHECK (tco2e_por_unidade > 0),
+    valor_unitario  REAL NOT NULL CHECK (valor_unitario > 0),
+    tipo_valor      TEXT NOT NULL CHECK (tipo_valor IN ('homologado','estimado')),
+    preco_por_tco2e REAL NOT NULL CHECK (preco_por_tco2e > 0),
+    data_referencia TEXT NOT NULL,          -- data do resultado (homologado) ou da divulgação (estimado)
+    coletado_por    INTEGER NOT NULL REFERENCES usuario(id),
+    coletado_em     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    descartado_em   TEXT,
+    UNIQUE (organizacao_id, referencia)
 );
 
 -- ---------------------------------------------------------------- e-mail (versão 9)
@@ -648,9 +676,18 @@ def _migrar_10_para_11(con: sqlite3.Connection) -> None:
             con.execute(f"ALTER TABLE oidc_estado ADD COLUMN {nome} {tipo}")
 
 
+def _migrar_11_para_12(con: sqlite3.Connection) -> None:
+    colunas = {r["name"] for r in con.execute("PRAGMA table_info(pedido)")}
+    for nome, tipo in (("pncp_controle", "TEXT"),
+                       ("pncp_dados", "TEXT CHECK (pncp_dados IS NULL OR json_valid(pncp_dados))"),
+                       ("pncp_conferido_em", "TEXT")):
+        if colunas and nome not in colunas:
+            con.execute(f"ALTER TABLE pedido ADD COLUMN {nome} {tipo}")
+
+
 # Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
 # próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
-MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9, 9: None, 10: _migrar_10_para_11}
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9, 9: None, 10: _migrar_10_para_11, 11: _migrar_11_para_12}
 
 
 def migrar(con: sqlite3.Connection, caminho: str = "") -> int:

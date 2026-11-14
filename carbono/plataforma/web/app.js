@@ -187,7 +187,7 @@ function menu() {
   if (p === "elaborador") itens.push(["unidades", "Unidades e instalações"]);
   if (["elaborador", "fiscal", "fornecedor", "registrador", "auditor"].includes(p))
     itens.push(["terceirizadas", p === "fornecedor" ? "Meus contratos" : "Terceirizadas"]);
-  if (p === "elaborador") itens.push(["catalogo", "Comprar créditos"]);
+  if (p === "elaborador") itens.push(["catalogo", "Comprar créditos"], ["precos", "Pesquisa de preços"]);
   if (["elaborador", "fiscal", "registrador", "auditor"].includes(p)) itens.push(["pedidos", "Pedidos de compra"]);
   if (p === "fornecedor") itens.push(["vendas", "Vender créditos"]);
   if (["elaborador", "fornecedor", "registrador", "auditor"].includes(p)) itens.push(["projetos", "Projetos de geração"]);
@@ -1314,8 +1314,10 @@ async function telaPedido(id) {
         ${p.status === "pago" && p.inventario_id && doOrgao ? `<a class="botao" href="#/inventarios/${p.inventario_id}">Compensar no inventário</a>` : ""}</div></section>
     <section class="bloco"><h2>Próxima etapa</h2>${acao || `<p class="vazio">${p.status === "pago" ? "Despesa concluída." : p.status === "cancelado" ? "Pedido encerrado." : "Aguardando outra parte."}</p>`}
       ${cancelavel ? `<form id="f-canc" class="grade" style="margin-top:1rem"><label class="largo">Motivo do cancelamento${p.status === "empenhado" ? ` <span class="ajuda">Anule também o empenho no sistema financeiro.</span>` : ""}<input name="motivo" required></label>
-        <div class="acoes largo"><button type="submit" class="botao perigo">Cancelar pedido</button></div><p class="erro-campo largo"></p></form>` : ""}</section></div>`;
+        <div class="acoes largo"><button type="submit" class="botao perigo">Cancelar pedido</button></div><p class="erro-campo largo"></p></form>` : ""}</section></div>
+    ${secaoPncpPedido(p, doOrgao && pp === "elaborador")}`;
   const recarregar = () => telaPedido(id);
+  aoEnviar($("#f-pncp"), async (d) => { await api("POST", `/pedidos/${id}/pncp`, d); avisar("Contratação conferida no PNCP e vinculada ao pedido."); recarregar(); });
   $("#b-tr").onclick = () => abrirRelatorio(`/pedidos/${id}/minuta-tr.html`).catch((e) => avisar(e.message, true));
   $("#b-tr-docx").onclick = () => baixar(`/pedidos/${id}/tr.docx`, `termo-de-referencia-pedido-${id}.docx`).catch((e) => avisar(e.message, true));
   aoEnviar($("#f-instr"), async (d) => { await api("POST", `/pedidos/${id}/instrucao`, d); avisar("Instrução registrada."); recarregar(); });
@@ -1331,6 +1333,64 @@ async function telaPedido(id) {
     if (!(await confirmar(`Entregar ${t(p.quantidade)} créditos?`, `Os créditos serão transferidos para a conta de ${p.orgao} no registro. Não é possível desfazer.`, "Entregar créditos"))) return;
     try { await api("POST", `/pedidos/${id}/entrega`); avisar("Créditos entregues."); recarregar(); } catch (e) { avisar(e.message, true); }
   };
+}
+
+function secaoPncpPedido(p, podeEditar) {
+  const x = p.pncp;
+  return `<section class="bloco"><h2>Contratação no PNCP</h2>
+    ${p.alerta_pncp ? `<ul class="alertas"><li>${esc(p.alerta_pncp)}</li></ul>` : ""}
+    ${x ? `<dl class="ficha">
+        <div><dt>Nº de controle</dt><dd class="mono"><a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.numeroControlePNCP)}</a></dd></div>
+        <div><dt>Modalidade e situação</dt><dd>${esc(x.modalidade || "—")} · ${esc(x.situacao || "—")}</dd></div>
+        <div><dt>Objeto</dt><dd>${esc(x.objeto)}</dd></div>
+        <div><dt>Valores no PNCP</dt><dd>estimado ${x.valor_estimado != null ? brl(x.valor_estimado) : "—"} · homologado ${x.valor_homologado != null ? brl(x.valor_homologado) : "—"}</dd></div>
+        <div><dt>Conferido no PNCP</dt><dd>${data(p.pncp_conferido_em)}</dd></div></dl>`
+      : `<p class="memoria">A publicação é feita pelo sistema de compras do órgão. Depois de publicada, informe o nº de controle aqui: a plataforma confere no portal que a contratação existe e é deste órgão.</p>`}
+    ${podeEditar && p.status !== "cancelado" ? `<form id="f-pncp" class="grade">
+      <label class="largo">${x ? "Conferir de novo ou trocar" : "Nº de controle PNCP ou link da contratação"}<input name="numero" required placeholder="11111111000191-1-000012/2026 ou https://pncp.gov.br/app/editais/…" value="${esc(x?.numeroControlePNCP || "")}"></label>
+      <div class="acoes largo"><button type="submit" class="botao secundario">Conferir no PNCP</button><a class="botao secundario" href="#/precos">Pesquisa de preços</a></div><p class="erro-campo largo"></p></form>` : ""}
+  </section>`;
+}
+
+// ---------------------------------------------------------------- pesquisa de preços (PNCP)
+async function telaPrecos() {
+  const fontes = await api("GET", "/pesquisa-precos?todas=true");
+  const vigente = (f) => !f.descartado_em && f.data_referencia >= new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+  conteudo.innerHTML = `<h1>Pesquisa de preços</h1>
+    <p class="introducao">Contratações similares de outros órgãos, divulgadas no PNCP (Lei 14.133/2021, art. 23, § 1º, II). As fontes dos últimos 12 meses entram no ETP e no Termo de Referência, junto com o catálogo.</p>
+    <section class="bloco"><h2>Buscar itens de uma contratação</h2>
+      <p class="memoria">Encontre a compra de créditos de carbono no portal pncp.gov.br e cole aqui o nº de controle ou o link.</p>
+      <form id="f-buscar" class="grade"><label class="largo">Nº de controle PNCP ou link<input name="numero" required placeholder="22222222000191-1-000007/2026"></label>
+        <div class="acoes largo"><button type="submit" class="botao">Ver itens</button></div><p class="erro-campo largo"></p></form>
+      <div id="itens-pncp"></div></section>
+    <section class="bloco"><h2>Fontes registradas</h2>
+      ${fontes.length ? `<div class="rolagem"><table><thead><tr><th>Órgão contratante</th><th>Item</th><th class="num">R$/tCO2e</th><th>Data</th><th></th></tr></thead><tbody>
+        ${fontes.map((f) => `<tr${vigente(f) ? "" : ' class="apagado"'}><td>${esc(f.orgao_contratante)}<div class="memoria"><a href="${esc(f.link)}" target="_blank" rel="noopener">${esc(f.referencia)}</a></div></td>
+          <td>${esc(f.item_descricao)}<div class="memoria">${esc(f.unidade)} · ${f.tco2e_por_unidade === 1 ? "1 tCO2e por unidade" : `${t(f.tco2e_por_unidade)} tCO2e por unidade`} · valor ${esc(f.tipo_valor)}</div></td>
+          <td class="num">${brl(f.preco_por_tco2e)}</td><td>${dataCurta(f.data_referencia)}</td>
+          <td>${f.descartado_em ? "Descartada" : !vigente(f) ? "Mais de 12 meses" : `<button type="button" class="link perigo-texto" data-descartar="${f.id}">Descartar</button>`}</td></tr>`).join("")}
+        </tbody></table></div>` : `<p class="vazio">Nenhuma fonte registrada ainda.</p>`}</section>`;
+  aoEnviar($("#f-buscar"), async ({ numero }) => {
+    const r = await api("GET", `/pncp/itens?numero=${encodeURIComponent(numero)}`);
+    const c = r.compra;
+    $("#itens-pncp").innerHTML = `<h3>${esc(c.orgao || c.cnpj)} — ${esc(c.modalidade || "")}</h3>
+      <p>${esc(c.objeto)} · <a href="${esc(c.link)}" target="_blank" rel="noopener">abrir no PNCP</a></p>
+      <div class="rolagem"><table><thead><tr><th class="num">Item</th><th>Descrição</th><th>Unidade</th><th class="num">Estimado</th><th class="num">Homologado</th><th>Usar como fonte</th></tr></thead><tbody>
+      ${r.itens.map((i) => `<tr><td class="num">${i.numero}</td><td>${esc(i.descricao)}</td><td>${esc(i.unidade)}</td>
+        <td class="num">${i.valor_estimado != null ? brl(i.valor_estimado) : "sigiloso"}</td>
+        <td class="num">${i.homologado ? `${brl(i.homologado.valor)}<div class="memoria">${esc(i.homologado.fornecedor || "")}</div>` : "—"}</td>
+        <td>${i.homologado || i.valor_estimado != null ? `<form class="f-fonte linha" data-item="${i.numero}"><label class="sr-only" for="q${i.numero}">tCO2e por unidade</label>
+          <input id="q${i.numero}" name="tco2e_por_unidade" type="number" min="0.0001" step="any" value="1" title="tCO2e por unidade" style="width:5.5rem">
+          <button type="submit" class="botao secundario">Registrar</button></form>` : ""}</td></tr>`).join("")}
+      </tbody></table></div><p class="memoria">Informe quantas tCO2e cada unidade do item representa (1 se o item já é por tonelada). O valor homologado tem prioridade; sem ele, usa-se o estimado.</p>`;
+    conteudo.querySelectorAll(".f-fonte").forEach((f) => aoEnviar(f, async (d) => {
+      await api("POST", "/pesquisa-precos", { numero, numero_item: Number(f.dataset.item), tco2e_por_unidade: Number(d.tco2e_por_unidade) });
+      avisar("Fonte registrada na pesquisa de preços."); telaPrecos();
+    }));
+  });
+  conteudo.querySelectorAll("[data-descartar]").forEach((b) => (b.onclick = async () => {
+    try { await api("POST", `/pesquisa-precos/${b.dataset.descartar}/descarte`); telaPrecos(); } catch (e) { avisar(e.message, true); }
+  }));
 }
 
 async function telaVendas() {
@@ -1747,7 +1807,7 @@ async function navegar() {
       unidades: telaUnidades, terceirizadas: telaTerceirizadas, contratos: () => telaContrato(Number(a)),
       registro: telaRegistro, cadastros: telaCadastros, auditoria: telaAuditoria,
       catalogo: telaCatalogo, pedidos: () => (a ? telaPedido(Number(a)) : telaPedidos()),
-      vendas: telaVendas, credenciamentos: telaCredenciamentos,
+      vendas: telaVendas, credenciamentos: telaCredenciamentos, precos: telaPrecos,
       projetos: () => (a ? telaProjeto(Number(a)) : telaProjetos()),
       verificar: () => telaVerificar(a, decodeURIComponent(b || "")),
       "definir-senha": () => telaDefinirSenha(a), pendentes: telaPendentes, privacidade: telaPrivacidade, termos: telaTermos, conta: telaConta,

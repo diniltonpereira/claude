@@ -293,3 +293,12 @@ details summary { cursor: pointer; color: var(--mata); font-size: .9rem; margin:
 details.alternativa { margin-top: 1rem; }
 details.alternativa summary { cursor: pointer; color: var(--tinta-suave); }
 .alerta-bloco { border-color: var(--ambar); background: var(--ambar-fundo); }
+
+/* ---------------------------------------------------------------- pesquisa de preços */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); border: 0; }
+form.linha { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+tr.apagado td { color: var(--tinta-suave); }
+#itens-pncp td.num .memoria { white-space: normal; max-width: 14rem; margin-left: auto; text-align: right; }
+#itens-pncp td:last-child { white-space: nowrap; }
+#itens-pncp form.linha { flex-wrap: nowrap; }
+#itens-pncp form.linha input { width: 4.5rem !important; }
