@@ -17,8 +17,8 @@ Plataforma para **órgãos públicos, PPPs e concessões** inventariarem emissõ
 | --- | --- |
 | `plataforma/fatores.py` | Fatores de emissão com fonte e ano, e GWP do AR5 |
 | `plataforma/calculo.py` | Aferição por fator ou por gás, com parcela biogênica separada e memória de cálculo |
-| `plataforma/mrv.py` | Fluxo de verificação e moderação com segregação de funções |
-| `plataforma/enquadramento.py` | Faixa no SBCE, fase de implantação (art. 50), obrigações por tipo e checagens de projeto público (arts. 43 e 49) e de repartição com comunidades (art. 47) |
+| `plataforma/mrv.py` | Instalações e fontes, lançamento de atividades e fluxo de verificação e moderação com segregação de funções |
+| `plataforma/enquadramento.py` | Faixa no SBCE por instalação (art. 30), fase de implantação (art. 50), obrigações por tipo e checagens de projeto público (arts. 43 e 49) e de repartição com comunidades (art. 47) |
 | `plataforma/registro.py` | Emissão, transferência e cancelamento (art. 2º, II; art. 45) de lotes, com livro-razão somente-inclusão encadeado por SHA-256 |
 | `plataforma/compensacao.py` | Compensação voluntária (art. 45) e conciliação periódica sobre emissões líquidas (art. 34), com limite de CRVE do PNA e validade da CBE por período |
 | `plataforma/api.py` | API REST (FastAPI). Documentação em `/docs` |
@@ -38,7 +38,7 @@ Plataforma para **órgãos públicos, PPPs e concessões** inventariarem emissõ
 ```bash
 cd carbono
 pip install -r requirements.txt
-python -m pytest -q                      # 45 testes
+python -m pytest -q                      # 51 testes
 python -m plataforma demo                # ciclo completo com dados fictícios
 python -m plataforma iniciar             # cria o banco e o 1º registrador
 python -m plataforma servir --porta 8000 # API em http://127.0.0.1:8000/docs

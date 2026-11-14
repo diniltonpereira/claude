@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from . import compensacao, mrv, registro
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
-                            checar_projeto_publico, checar_reparticao_comunidade, enquadrar,
+                            checar_projeto_publico, checar_reparticao_comunidade, enquadrar_operador,
                             fase_em)
 from .fatores import FATORES, GWP_AR5
 
@@ -50,6 +50,16 @@ class AtividadeIn(BaseModel):
     fracao_biogenica: float | None = Field(default=None, ge=0, le=1)
     evidencia: str | None = None
     remocao: bool = False
+    instalacao_id: int | None = None
+
+
+class InstalacaoIn(BaseModel):
+    nome: str = Field(min_length=2)
+    natureza: Literal["instalacao", "fonte_movel"] = "instalacao"
+    identificador: str | None = None
+    municipio_uf: str | None = None
+    agropecuaria_primaria: bool = False      # art. 1º, § 2º
+    residuos_neutralizacao: bool = False     # art. 30, § 3º
 
 class TransicaoIn(BaseModel):
     acao: Literal["submeter", "assumir", "verificar", "devolver", "aprovar"]
@@ -57,8 +67,6 @@ class TransicaoIn(BaseModel):
 
 class EnquadramentoIn(BaseModel):
     data_referencia: date | None = None
-    atividade_agropecuaria_primaria: bool = False
-    residuos_com_neutralizacao: bool = False
     gera_creditos: bool = False
     terras_publicas_ou_tradicionais: bool = False
     limiar_monitoramento: float = Field(default=LIMIAR_MONITORAMENTO, ge=LIMIAR_MONITORAMENTO)
@@ -204,6 +212,17 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
                         (d.nome, d.papel, d.organizacao_id, int(d.acreditado))).lastrowid
         return {"id": uid}
 
+    # ---------------- Instalações e fontes (art. 2º, XII e XV) ----------------
+    @app.post("/organizacoes/{oid}/instalacoes", status_code=201)
+    def criar_inst(oid: int, d: InstalacaoIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": mrv.criar_instalacao(c, u["id"], oid, **d.model_dump())}
+
+    @app.get("/organizacoes/{oid}/instalacoes")
+    def listar_inst(oid: int, u=Depends(usuario), c=Depends(db)):
+        if u["papel"] not in ("registrador", "verificador", "moderador") and u["organizacao_id"] != oid:
+            raise NaoAutorizado("Instalações de outra organização.")
+        return mrv.listar_instalacoes(c, oid)
+
     # ---------------- MRV ----------------
     @app.post("/inventarios", status_code=201)
     def criar_inv(d: InventarioIn, u=Depends(usuario), c=Depends(db)):
@@ -221,6 +240,7 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
         _pode_ver(c, u, inv)
         ativ = [dict(r) for r in c.execute("SELECT * FROM atividade WHERE inventario_id=? ORDER BY id", (iid,))]
         return {**dict(inv), "totais": mrv.totais(c, iid), "atividades": ativ,
+                "por_instalacao": mrv.totais_por_instalacao(c, iid),
                 "historico": mrv.historico(c, iid),
                 "compensado": compensacao.ja_compensado(c, iid, "compensacao_voluntaria"),
                 "conciliado": compensacao.ja_compensado(c, iid, "conciliacao_sbce")}
@@ -238,8 +258,8 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
         inv = buscar(c, "inventario", iid)
         _pode_ver(c, u, inv)
         org = buscar(c, "organizacao", inv["organizacao_id"])
-        t = mrv.totais(c, iid)
-        r = enquadrar(org["tipo"], t["escopo1"], esfera=org["esfera"], **d.model_dump()).como_dict()
+        r = enquadrar_operador(org["tipo"], mrv.totais_por_instalacao(c, iid), esfera=org["esfera"],
+                               **d.model_dump())
         if inv["status"] != "aprovado":
             r["alertas"].append("Inventário ainda não aprovado: enquadramento preliminar.")
         return r

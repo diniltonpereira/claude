@@ -28,6 +28,7 @@
 | > 10.000 tCO2e/ano | Plano de monitoramento, relato anual e demais obrigações | arts. 29, I, II e IV, e 30, I |
 | > 25.000 tCO2e/ano | Tudo acima, mais o **relato de conciliação periódica** | arts. 29, III, 30, II, e 34 |
 
+- **O patamar é aplicado a cada instalação ou fonte**, não ao total do operador (art. 30). Na plataforma, cada atividade é vinculada a uma instalação (art. 2º, XV) ou fonte móvel (art. 2º, XII), e `enquadrar_operador` classifica cada uma. A faixa do operador é a da unidade mais rigorosa. **A base da conciliação soma só as instalações acima de 25 mil tCO2e.** Abaixo disso, a plataforma recusa a conciliação e indica a compensação voluntária.
 - **Os patamares podem ser majorados** por ato do órgão gestor (art. 30, § 1º), nunca reduzidos. O código recusa valor menor que o legal.
 - Só valem para atividades com **metodologia de MRV consolidada** (art. 30, § 2º).
 - **Exceção relevante para o setor público:** unidades de tratamento e destinação de resíduos sólidos e efluentes que comprovem sistemas de neutralização ficam fora dos patamares (art. 30, § 3º). Isso interessa a aterros e ETEs em concessão de saneamento. Ver `residuos_com_neutralizacao`.
@@ -150,4 +151,3 @@ Implementado em `checar_projeto_publico` e `POST /checagens/projeto-publico`.
 2. **Ato de prorrogação da fase I** e o termo inicial das fases seguintes (art. 50).
 3. **Integração** com o Registro Central (art. 23) e interoperabilidade com escrituradores (art. 15, § 2º).
 4. **Conferir** a Lei 11.284/2006 e as cláusulas das concessões florestais.
-5. **Enquadramento por instalação** (art. 30), em vez do total da organização.

@@ -10,7 +10,8 @@ VII e XIX) e ativos do SBCE (CBE e CRVE), sempre com cancelamento. O ente pode r
 os tipos por política própria (`tipos_aceitos`). Ordem: CRVE, voluntário, CBE.
 
 Conciliação periódica (arts. 34 e 2º, V): só ativos do SBCE (art. 10), em quantidade igual
-às emissões LÍQUIDAS do escopo 1. A CRVE fica limitada ao percentual máximo do PNA
+às emissões LÍQUIDAS do escopo 1 das instalações e fontes acima do patamar de conciliação
+(art. 30, II). As demais instalações não entram na base. A CRVE fica limitada ao percentual máximo do PNA
 (arts. 12, I, e 21, IV), aqui o parâmetro `limite_crve`. A CBE vale no próprio período de
 compromisso, salvo autorização do PNA (art. 11, § 2º). Ordem: CBE, depois CRVE.
 """
@@ -20,7 +21,8 @@ import math
 import sqlite3
 
 from .banco import ErroNegocio, NaoAutorizado, buscar, transacao
-from .mrv import totais
+from .enquadramento import LIMIAR_CONCILIACAO, enquadrar_operador
+from .mrv import totais, totais_por_instalacao
 from .registro import cancelar
 
 TIPOS_POR_FINALIDADE = {
@@ -45,7 +47,8 @@ def compensar(con: sqlite3.Connection, usuario_id: int, inventario_id: int, *,
               escopos: tuple[int, ...] = (1, 2), idade_maxima_safra: int = 5,
               tipos_aceitos: tuple[str, ...] | None = None,
               limite_crve: float = 0.0, periodo_compromisso: tuple[int, int] | None = None,
-              cbe_outros_periodos: bool = False, simular: bool = False,
+              cbe_outros_periodos: bool = False, limiar_conciliacao: float = LIMIAR_CONCILIACAO,
+              simular: bool = False,
               chave_idempotencia: str | None = None) -> dict:
     if finalidade not in TIPOS_POR_FINALIDADE:
         raise ErroNegocio("Finalidade deve ser 'compensacao_voluntaria' ou 'conciliacao_sbce'.")
@@ -88,8 +91,18 @@ def compensar(con: sqlite3.Connection, usuario_id: int, inventario_id: int, *,
             raise ErroNegocio("Organização sem conta no registro.")
 
         t = totais(con, inventario_id)
+        consideradas: list[dict] = []
         if conciliacao:
-            base = t["escopo1_liquido"]           # emissões líquidas (art. 2º, V e XI)
+            op = enquadrar_operador(org["tipo"], totais_por_instalacao(con, inventario_id),
+                                    limiar_conciliacao=limiar_conciliacao)
+            consideradas = [{"instalacao_id": i["instalacao_id"], "nome": i["nome"],
+                             "escopo1_liquido": i["escopo1_liquido"]}
+                            for i in op["instalacoes"] if i["faixa_sbce"] == "regulado_conciliacao"]
+            if not consideradas:
+                raise ErroNegocio("Nenhuma instalação ou fonte acima do patamar de conciliação "
+                                  f"({limiar_conciliacao:g} tCO2e/ano, art. 30, II): não há "
+                                  "obrigação de conciliar. Use a compensação voluntária.")
+            base = op["base_conciliacao_tco2e"]   # emissões líquidas (art. 2º, V e XI)
         else:
             base = sum(t[f"escopo{e}"] for e in escopos)
         meta = math.ceil(base * percentual / 100 - 1e-9)
@@ -129,6 +142,7 @@ def compensar(con: sqlite3.Connection, usuario_id: int, inventario_id: int, *,
 
         resultado = {"inventario_id": inventario_id, "finalidade": finalidade, "escopos": list(escopos),
                      "emissoes_base_tco2e": round(base, 6), "remocoes_tco2e": t["remocoes"],
+                     "instalacoes_consideradas": consideradas,
                      "meta_unidades": meta, "a_compensar": restante, "plano": plano,
                      "deficit": falta, "lotes_ignorados": ignorados, "simulacao": simular}
         if simular:

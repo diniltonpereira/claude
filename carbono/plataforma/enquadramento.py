@@ -108,7 +108,7 @@ def enquadrar(tipo: str, emissoes_escopo1: float, *, data_referencia: date | Non
               terras_publicas_ou_tradicionais: bool = False,
               limiar_monitoramento: float = LIMIAR_MONITORAMENTO,
               limiar_conciliacao: float = LIMIAR_CONCILIACAO,
-              fase1_prorrogada: bool = True) -> Enquadramento:
+              fase1_prorrogada: bool = True, por_instalacao: bool = False) -> Enquadramento:
     if tipo not in TIPOS_ORGANIZACAO:
         raise ValueError(f"Tipo de organização inválido: {tipo!r}")
     if esfera is not None and esfera not in ESFERAS:
@@ -159,8 +159,9 @@ def enquadrar(tipo: str, emissoes_escopo1: float, *, data_referencia: date | Non
     if faixa != "nao_regulado" and not relato_exigivel:
         e.alertas.append(f"Na fase {fase.numero} as obrigações ainda não são exigíveis. Use o período "
                          "para estruturar o plano de monitoramento.")
-    e.alertas.append("O patamar se aplica por instalação ou fonte do operador (art. 30). Este "
-                     "enquadramento usa o total da organização; refine por instalação.")
+    if not por_instalacao:
+        e.alertas.append("O patamar se aplica por instalação ou fonte do operador (art. 30). Este "
+                         "enquadramento usa um único valor; use enquadrar_operador().")
 
     # --- Contratante público -----------------------------------------------
     if tipo == "orgao_publico":
@@ -248,6 +249,65 @@ def enquadrar(tipo: str, emissoes_escopo1: float, *, data_referencia: date | Non
                              "art. 43, § 13). Podem fazer projetos públicos em UCs e imóveis "
                              "municipais (art. 43, III).")
     return e
+
+
+# ---------------------------------------------------------------------------
+# Enquadramento por instalação (art. 30)
+# ---------------------------------------------------------------------------
+_RIGOR = {"nao_regulado": 0, "regulado_monitoramento": 1, "regulado_conciliacao": 2}
+
+
+def enquadrar_operador(tipo: str, unidades: list[dict], **kwargs) -> dict:
+    """Aplica os patamares a cada instalação ou fonte (art. 30) e consolida o operador.
+
+    `unidades`: itens de mrv.totais_por_instalacao(). A faixa do operador é a da unidade mais
+    rigorosa. A base da conciliação soma só as emissões líquidas das unidades acima do patamar
+    de conciliação (arts. 30, II, e 34).
+    """
+    lim_m = kwargs.get("limiar_monitoramento", LIMIAR_MONITORAMENTO)
+    lim_c = kwargs.get("limiar_conciliacao", LIMIAR_CONCILIACAO)
+    for k in ("atividade_agropecuaria_primaria", "residuos_com_neutralizacao"):
+        kwargs.pop(k, None)  # aqui essas exclusões são por unidade
+    reais = [u for u in unidades if u["instalacao_id"] is not None]
+    alertas: list[str] = []
+    avaliadas = []
+    for u in unidades:
+        if u["instalacao_id"] is None and reais:
+            if u["escopo1"]:
+                alertas.append(f"{u['escopo1']:g} tCO2e de escopo 1 sem instalação vinculada não "
+                               "foram enquadradas. Vincule as atividades às instalações ou fontes.")
+            continue
+        if u["instalacao_id"] is None:
+            alertas.append("Nenhuma instalação cadastrada: a organização foi tratada como uma única "
+                           "instalação. Cadastre as instalações e fontes para aplicar o art. 30.")
+        excluida = u["agropecuaria_primaria"] or u["residuos_neutralizacao"]
+        if u["agropecuaria_primaria"]:
+            faixa = "nao_regulado"
+            alertas.append(f"{u['nome']}: produção primária agropecuária, fora das obrigações "
+                           "(art. 1º, § 2º).")
+        elif u["residuos_neutralizacao"]:
+            faixa = "nao_regulado"
+            alertas.append(f"{u['nome']}: tratamento de resíduos/efluentes com neutralização "
+                           "comprovada, fora dos patamares (art. 30, § 3º).")
+        else:
+            faixa = faixa_sbce(u["escopo1"], lim_m, lim_c)
+        avaliadas.append({**u, "faixa_sbce": faixa, "excluida": bool(excluida)})
+
+    pior = max(avaliadas, key=lambda a: (_RIGOR[a["faixa_sbce"]], a["escopo1"]), default=None)
+    referencia = pior["escopo1"] if pior and pior["faixa_sbce"] != "nao_regulado" else \
+        max((a["escopo1"] for a in avaliadas if not a["excluida"]), default=0.0)
+    e = enquadrar(tipo, referencia, por_instalacao=True, **kwargs)
+    e.alertas = alertas + e.alertas
+    base = sum(a["escopo1_liquido"] for a in avaliadas if a["faixa_sbce"] == "regulado_conciliacao")
+    total = sum(a["escopo1"] for a in avaliadas if not a["excluida"])
+    if e.faixa_sbce == "nao_regulado" and total > lim_m:
+        e.alertas.append(f"O total do operador ({total:g} tCO2e) passa do patamar, mas nenhuma "
+                         "instalação ou fonte isolada passa: não há obrigação no SBCE (art. 30).")
+    r = e.como_dict()
+    r["instalacoes"] = avaliadas
+    r["escopo1_total_operador"] = round(total, 6)
+    r["base_conciliacao_tco2e"] = round(base, 6)
+    return r
 
 
 # ---------------------------------------------------------------------------

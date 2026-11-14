@@ -213,20 +213,34 @@ def test_compensacao_voluntaria_aceita_ativos_do_sbce_art45(cen):
     assert so_crve["deficit"] == 14  # política do ente pode ser mais restritiva que a lei
 
 
+def aprovar(s, inv):
+    for u, a in [("elab", "submeter"), ("verif", "assumir"), ("verif", "verificar"), ("mod", "aprovar")]:
+        mrv.transitar(s["c"], s[u], inv, a)
+
+
 def test_conciliacao_limite_de_crve_e_periodo_da_cbe(cen):
-    inv = inventario_aprovado(cen)  # 24 unidades
-    emitir(cen, qtd=10, tipo="CBE", safra=2025, serial="CBE-25", conta=cen["conta_org"])
-    emitir(cen, qtd=10, tipo="CBE", safra=2024, serial="CBE-24", conta=cen["conta_org"])
-    emitir(cen, qtd=50, tipo="CRVE", serial="CRVE-1", conta=cen["conta_org"])
-    r = compensacao.compensar(cen["c"], cen["elab"], inv, finalidade="conciliacao_sbce",
+    c = cen["c"]
+    inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
+    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="caldeira", gas="CO2", quantidade=30_000)
+    aprovar(cen, inv)
+    emitir(cen, qtd=10_000, tipo="CBE", safra=2025, serial="CBE-25", conta=cen["conta_org"])
+    emitir(cen, qtd=10_000, tipo="CBE", safra=2024, serial="CBE-24", conta=cen["conta_org"])
+    emitir(cen, qtd=50_000, tipo="CRVE", serial="CRVE-1", conta=cen["conta_org"])
+    r = compensacao.compensar(c, cen["elab"], inv, finalidade="conciliacao_sbce",
                               limite_crve=0.25, simular=True)
     usado = {p["serial"]: p["quantidade"] for p in r["plano"]}
-    assert usado == {"CBE-25": 10, "CRVE-1": 6} and r["deficit"] == 8
+    assert usado == {"CBE-25": 10_000, "CRVE-1": 7_500} and r["deficit"] == 12_500
     assert any("art. 11, § 2º" in m for m in r["lotes_ignorados"])
     # Com autorização do PNA para usar CBE de outro período (art. 11, § 2º, II):
-    r2 = compensacao.compensar(cen["c"], cen["elab"], inv, finalidade="conciliacao_sbce",
+    r2 = compensacao.compensar(c, cen["elab"], inv, finalidade="conciliacao_sbce",
                                limite_crve=0.25, cbe_outros_periodos=True, simular=True)
-    assert r2["deficit"] == 0
+    assert r2["deficit"] == 2_500
+
+
+def test_abaixo_do_patamar_nao_ha_conciliacao(cen):
+    inv = inventario_aprovado(cen)  # 23 tCO2e
+    with pytest.raises(ErroNegocio, match="art. 30, II"):
+        compensacao.compensar(cen["c"], cen["elab"], inv, finalidade="conciliacao_sbce", simular=True)
 
 
 def test_conciliacao_recusa_credito_voluntario(cen):
@@ -239,7 +253,7 @@ def test_conciliacao_recusa_credito_voluntario(cen):
 def test_conciliacao_usa_emissoes_liquidas(cen):
     c = cen["c"]
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="diesel", fator="diesel_b", quantidade=10_000)
+    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="caldeira", gas="CO2", quantidade=30_000)
     mrv.adicionar_atividade(c, cen["elab"], inv, descricao="reflorestamento", gas="CO2",
                             quantidade=5, remocao=True)
     with pytest.raises(ErroNegocio, match="gas='CO2'"):
@@ -248,9 +262,8 @@ def test_conciliacao_usa_emissoes_liquidas(cen):
         mrv.transitar(c, cen[u], inv, a)
     t = mrv.totais(c, inv)
     assert t["remocoes"] == 5 and t["escopo1_liquido"] == pytest.approx(t["escopo1"] - 5)
-    emitir(cen, qtd=100, tipo="CBE", safra=2025, serial="CBE-1", conta=cen["conta_org"])
     r = compensacao.compensar(c, cen["elab"], inv, finalidade="conciliacao_sbce", simular=True)
-    assert r["meta_unidades"] == 19  # ceil(23,06 - 5)
+    assert r["meta_unidades"] == 29_995
 
 
 def test_verificador_precisa_ser_acreditado(cen):
@@ -262,6 +275,72 @@ def test_verificador_precisa_ser_acreditado(cen):
     mrv.transitar(c, cen["elab"], inv, "submeter")
     with pytest.raises(NaoAutorizado, match="art. 32"):
         mrv.transitar(c, nao, inv, "assumir")
+
+
+# ---------------- Enquadramento por instalação (art. 30) ----------------
+def operador_com_unidades(s, unidades):
+    """unidades: lista de (nome, tCO2e, kwargs). Retorna (inventário aprovado, ids)."""
+    c = s["c"]
+    inv = mrv.criar_inventario(c, s["elab"], s["org"], 2025)
+    ids = {}
+    for nome, t, kw in unidades:
+        ids[nome] = mrv.criar_instalacao(c, s["elab"], s["org"], nome=nome, **kw)
+        mrv.adicionar_atividade(c, s["elab"], inv, descricao=nome, gas="CO2", quantidade=t,
+                                instalacao_id=ids[nome])
+    aprovar(s, inv)
+    return inv, ids
+
+
+def test_patamar_e_por_instalacao_e_nao_pelo_total(cen):
+    inv, _ = operador_com_unidades(cen, [("ETE A", 8_000, {}), ("ETE B", 8_000, {}), ("ETE C", 8_000, {})])
+    from plataforma.enquadramento import enquadrar_operador
+    r = enquadrar_operador("concessao", mrv.totais_por_instalacao(cen["c"], inv))
+    assert r["faixa_sbce"] == "nao_regulado" and r["escopo1_total_operador"] == 24_000
+    assert any("nenhuma instalação ou fonte isolada" in a for a in r["alertas"])
+
+
+def test_conciliacao_so_considera_instalacoes_acima_de_25_mil(cen):
+    inv, ids = operador_com_unidades(cen, [
+        ("Aterro", 32_000, {}), ("Frota", 12_000, {"natureza": "fonte_movel"}), ("ETE", 8_000, {})])
+    from plataforma.enquadramento import enquadrar_operador
+    r = enquadrar_operador("concessao", mrv.totais_por_instalacao(cen["c"], inv))
+    faixas = {i["nome"]: i["faixa_sbce"] for i in r["instalacoes"]}
+    assert faixas == {"Aterro": "regulado_conciliacao", "Frota": "regulado_monitoramento",
+                      "ETE": "nao_regulado"}
+    assert r["faixa_sbce"] == "regulado_conciliacao" and r["base_conciliacao_tco2e"] == 32_000
+    plano = compensacao.compensar(cen["c"], cen["elab"], inv, finalidade="conciliacao_sbce", simular=True)
+    assert plano["meta_unidades"] == 32_000
+    assert [i["nome"] for i in plano["instalacoes_consideradas"]] == ["Aterro"]
+
+
+def test_unidade_excluida_nao_contamina_o_operador(cen):
+    inv, _ = operador_com_unidades(cen, [("Aterro com captação", 90_000, {"residuos_neutralizacao": True}),
+                                         ("Sede", 500, {})])
+    from plataforma.enquadramento import enquadrar_operador
+    r = enquadrar_operador("concessao", mrv.totais_por_instalacao(cen["c"], inv))
+    assert r["faixa_sbce"] == "nao_regulado" and r["emissoes_escopo1_tco2e"] == 500
+    assert any("art. 30, § 3º" in a for a in r["alertas"])
+
+
+def test_atividade_sem_instalacao_gera_alerta(cen):
+    c = cen["c"]
+    inv, _ = operador_com_unidades(cen, [("Aterro", 30_000, {})])
+    c.execute("UPDATE inventario SET status='rascunho' WHERE id=?", (inv,))
+    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="solta", gas="CO2", quantidade=100)
+    from plataforma.enquadramento import enquadrar_operador
+    r = enquadrar_operador("concessao", mrv.totais_por_instalacao(c, inv))
+    assert any("sem instalação vinculada" in a for a in r["alertas"])
+
+
+def test_instalacao_de_outra_organizacao_e_recusada(cen):
+    c = cen["c"]
+    alheia = mrv.criar_instalacao(c, cen["gger"], cen["ger"], nome="Base florestal")
+    inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
+    with pytest.raises(ErroNegocio, match="outra organização"):
+        mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1,
+                                instalacao_id=alheia)
+    with pytest.raises(NaoAutorizado):
+        mrv.criar_instalacao(c, cen["elab"], cen["ger"], nome="Invasão")
 
 
 # ---------------- Lei 15.042/2024: fases e checagens ----------------
@@ -340,6 +419,12 @@ def test_api_fluxo_e_controle_de_acesso(tmp_path):
                  json={"descricao": "luz", "fator": "energia_sin", "quantidade": 1000})
     assert r.status_code == 201
     assert cli.get(f"/inventarios/{inv}", headers=H(e1)).json()["totais"]["escopo2"] == 38.5
+    inst = cli.post(f"/organizacoes/{o1['id']}/instalacoes", headers=H(e1), json={"nome": "Garagem"})
+    assert inst.status_code == 201
+    assert cli.get(f"/organizacoes/{o1['id']}/instalacoes", headers=H(e2)).status_code == 403
+    assert cli.post(f"/inventarios/{inv}/atividades", headers=H(e1), json={
+        "descricao": "frota", "fator": "diesel_b", "quantidade": 100,
+        "instalacao_id": inst.json()["id"]}).status_code == 201
     # IDOR: elaborador de outra organização não lê nem movimenta.
     assert cli.get(f"/inventarios/{inv}", headers=H(e2)).status_code == 403
     assert cli.get(f"/contas/{o1['conta_id']}/saldo", headers=H(e2)).status_code == 403

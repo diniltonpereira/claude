@@ -6,7 +6,7 @@ from datetime import date
 
 from . import compensacao, mrv, registro
 from .banco import conectar
-from .enquadramento import checar_projeto_publico, enquadrar, fase_em
+from .enquadramento import checar_projeto_publico, enquadrar, enquadrar_operador, fase_em
 
 
 def executar(banco: str = "demo.db") -> dict:
@@ -31,6 +31,7 @@ def executar(banco: str = "demo.db") -> dict:
                 "('Bruno (organismo acreditado)','verificador',?,1)", oia)
     mod = ins("INSERT INTO usuario (nome,papel) VALUES ('Carla (Controladoria)','moderador')")
     gest_flor = ins("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('Davi','elaborador',?)", flor)
+    elab_san = ins("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('Eva (Águas)','elaborador',?)", sanea)
 
     # Aferição: inventário 2025 da prefeitura.
     inv = mrv.criar_inventario(c, elab, pref, 2025)
@@ -67,6 +68,26 @@ def executar(banco: str = "demo.db") -> dict:
     simulacao = compensacao.compensar(c, elab, inv, simular=True)
     resultado = compensacao.compensar(c, elab, inv, chave_idempotencia="comp-2025")
 
+    # Concessionária de saneamento: o patamar é aplicado a cada instalação (art. 30).
+    inv_s = mrv.criar_inventario(c, elab_san, sanea, 2025)
+    unidades = [
+        ("Aterro sanitário Leste", "CH4", 1_150, {}),                    # ≈ 32.200 tCO2e
+        ("Aterro Oeste (captação e queima)", "CH4", 3_000, {"residuos_neutralizacao": True}),
+        ("Frota operacional", "CO2", 12_000, {"natureza": "fonte_movel"}),
+        ("ETE Centro", "N2O", 30, {}),                                   # ≈ 7.950 tCO2e
+    ]
+    for nome, gas, q, kw in unidades:
+        iid = mrv.criar_instalacao(c, elab_san, sanea, nome=nome, **kw)
+        mrv.adicionar_atividade(c, elab_san, inv_s, descricao=nome, gas=gas, quantidade=q,
+                                instalacao_id=iid, evidencia="Plano de monitoramento v1")
+    for usuario, acao in [(elab_san, "submeter"), (verif, "assumir"), (verif, "verificar"), (mod, "aprovar")]:
+        mrv.transitar(c, usuario, inv_s, acao)
+    op = enquadrar_operador("concessao", mrv.totais_por_instalacao(c, inv_s))
+    conta_s = conta[sanea]
+    registro.emitir(c, reg, conta_id=conta_s, tipo_ativo="CBE", projeto="Alocação PNA (exemplo)",
+                    metodologia="PNA", safra=2025, quantidade=30_000, serial="BR-CBE-2025-000001")
+    concil = compensacao.compensar(c, elab_san, inv_s, finalidade="conciliacao_sbce", simular=True)
+
     return {
         "totais_inventario_2025": t,
         "fase_sbce_hoje": fase_em(date.today()).numero,
@@ -84,5 +105,11 @@ def executar(banco: str = "demo.db") -> dict:
         "saldo_prefeitura": registro.saldo(c, conta[pref]),
         "saldo_concessao_florestal": sum(l["quantidade"] for l in registro.saldo(c, conta[flor])),
         "auditoria": registro.verificar_cadeia(c),
-        "concessionaria_saneamento_id": sanea,
+        "concessionaria_saneamento": {
+            "escopo1_total": op["escopo1_total_operador"],
+            "faixa_operador": op["faixa_sbce"],
+            "por_instalacao": {i["nome"]: (round(i["escopo1"]), i["faixa_sbce"]) for i in op["instalacoes"]},
+            "base_conciliacao": op["base_conciliacao_tco2e"],
+            "deficit_de_cbe": concil["deficit"],
+        },
     }

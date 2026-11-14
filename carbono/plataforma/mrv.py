@@ -44,11 +44,36 @@ def criar_inventario(con: sqlite3.Connection, usuario_id: int, organizacao_id: i
     return cur.lastrowid
 
 
+def criar_instalacao(con: sqlite3.Connection, usuario_id: int, organizacao_id: int, *, nome: str,
+                     natureza: str = "instalacao", identificador: str | None = None,
+                     municipio_uf: str | None = None, agropecuaria_primaria: bool = False,
+                     residuos_neutralizacao: bool = False) -> int:
+    """Cadastra instalação (art. 2º, XV) ou fonte móvel (art. 2º, XII) do operador."""
+    u = buscar(con, "usuario", usuario_id)
+    buscar(con, "organizacao", organizacao_id)
+    if not (u["papel"] == "registrador"
+            or (u["papel"] == "elaborador" and u["organizacao_id"] == organizacao_id)):
+        raise NaoAutorizado("Só o registrador ou um elaborador da organização cadastra instalações.")
+    try:
+        return con.execute(
+            """INSERT INTO instalacao (organizacao_id, nome, natureza, identificador, municipio_uf,
+               agropecuaria_primaria, residuos_neutralizacao) VALUES (?,?,?,?,?,?,?)""",
+            (organizacao_id, nome, natureza, identificador, municipio_uf,
+             int(agropecuaria_primaria), int(residuos_neutralizacao))).lastrowid
+    except sqlite3.IntegrityError as exc:
+        raise ErroNegocio(f"Instalação inválida ou com nome repetido: {exc}") from exc
+
+
+def listar_instalacoes(con: sqlite3.Connection, organizacao_id: int) -> list[dict]:
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM instalacao WHERE organizacao_id=? ORDER BY id", (organizacao_id,))]
+
+
 def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id: int, *,
                         descricao: str, quantidade: float, fator: str | None = None,
                         gas: str | None = None, escopo: int = 1,
                         fracao_biogenica: float | None = None, evidencia: str | None = None,
-                        remocao: bool = False) -> int:
+                        remocao: bool = False, instalacao_id: int | None = None) -> int:
     """Lança uma atividade. `remocao=True` registra remoção por sumidouro (só por gás, em
     massa de CO2 removida), que reduz as emissões líquidas (art. 2º, XI; art. 1º, § 4º)."""
     inv = buscar(con, "inventario", inventario_id)
@@ -59,6 +84,10 @@ def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id:
         raise ErroNegocio(f"Inventário em '{inv['status']}' não aceita alterações.")
     if (fator is None) == (gas is None):
         raise ErroNegocio("Informe exatamente um: 'fator' ou 'gas'.")
+    if instalacao_id is not None:
+        inst = buscar(con, "instalacao", instalacao_id)
+        if inst["organizacao_id"] != inv["organizacao_id"]:
+            raise ErroNegocio("Instalação de outra organização.")
     if remocao and gas != "CO2":
         raise ErroNegocio("Remoções são lançadas como massa de CO2 removida (gas='CO2').")
     try:
@@ -71,9 +100,9 @@ def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id:
     except ValueError as exc:
         raise ErroNegocio(str(exc)) from exc
     cur = con.execute(
-        """INSERT INTO atividade (inventario_id, descricao, escopo, natureza, origem, quantidade,
-           tco2e, tco2_biogenico, memoria, evidencia) VALUES (?,?,?,?,?,?,?,?,?,?)""",
-        (inventario_id, descricao, r.escopo, "remocao" if remocao else "emissao", origem, quantidade,
+        """INSERT INTO atividade (inventario_id, instalacao_id, descricao, escopo, natureza, origem,
+           quantidade, tco2e, tco2_biogenico, memoria, evidencia) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (inventario_id, instalacao_id, descricao, r.escopo, "remocao" if remocao else "emissao", origem, quantidade,
          r.tco2e, r.tco2_biogenico, ("REMOÇÃO: " if remocao else "") + r.memoria, evidencia))
     return cur.lastrowid
 
@@ -97,6 +126,33 @@ def totais(con: sqlite3.Connection, inventario_id: int) -> dict:
     # Emissões líquidas do escopo 1: base da conciliação periódica (art. 2º, V e XI; art. 34).
     por["escopo1_liquido"] = round(max(por["escopo1"] - remocoes, 0.0), 6)
     return por
+
+
+def totais_por_instalacao(con: sqlite3.Connection, inventario_id: int) -> list[dict]:
+    """Escopo 1 bruto e líquido por instalação/fonte. Atividades sem instalação vêm com id None."""
+    inv = buscar(con, "inventario", inventario_id)
+    linhas = con.execute(
+        """SELECT i.id, i.nome, i.natureza, i.agropecuaria_primaria, i.residuos_neutralizacao,
+                  COALESCE(SUM(CASE WHEN a.natureza='emissao' AND a.escopo=1 THEN a.tco2e END),0) e,
+                  COALESCE(SUM(CASE WHEN a.natureza='remocao' THEN a.tco2e END),0) r
+           FROM instalacao i LEFT JOIN atividade a ON a.instalacao_id=i.id AND a.inventario_id=?
+           WHERE i.organizacao_id=? GROUP BY i.id ORDER BY i.id""",
+        (inventario_id, inv["organizacao_id"])).fetchall()
+    out = [{"instalacao_id": l["id"], "nome": l["nome"], "natureza": l["natureza"],
+            "agropecuaria_primaria": bool(l["agropecuaria_primaria"]),
+            "residuos_neutralizacao": bool(l["residuos_neutralizacao"]),
+            "escopo1": round(l["e"], 6), "remocoes": round(l["r"], 6),
+            "escopo1_liquido": round(max(l["e"] - l["r"], 0.0), 6)} for l in linhas]
+    sem = con.execute(
+        """SELECT COALESCE(SUM(CASE WHEN natureza='emissao' AND escopo=1 THEN tco2e END),0) e,
+                  COALESCE(SUM(CASE WHEN natureza='remocao' THEN tco2e END),0) r
+           FROM atividade WHERE inventario_id=? AND instalacao_id IS NULL""", (inventario_id,)).fetchone()
+    if sem["e"] or sem["r"]:
+        out.append({"instalacao_id": None, "nome": "(sem instalação)", "natureza": None,
+                    "agropecuaria_primaria": False, "residuos_neutralizacao": False,
+                    "escopo1": round(sem["e"], 6), "remocoes": round(sem["r"], 6),
+                    "escopo1_liquido": round(max(sem["e"] - sem["r"], 0.0), 6)})
+    return out
 
 
 def transitar(con: sqlite3.Connection, usuario_id: int, inventario_id: int, acao: str,

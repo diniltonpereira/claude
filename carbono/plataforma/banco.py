@@ -40,9 +40,23 @@ CREATE TABLE IF NOT EXISTS inventario (
     UNIQUE (organizacao_id, ano)
 );
 
+-- Instalação (art. 2º, XV) ou fonte móvel (art. 2º, XII): unidade de aplicação dos patamares (art. 30).
+CREATE TABLE IF NOT EXISTS instalacao (
+    id              INTEGER PRIMARY KEY,
+    organizacao_id  INTEGER NOT NULL REFERENCES organizacao(id),
+    nome            TEXT NOT NULL,
+    natureza        TEXT NOT NULL CHECK (natureza IN ('instalacao','fonte_movel')),
+    identificador   TEXT,                   -- licença ambiental, CNPJ da filial, placa da frota…
+    municipio_uf    TEXT,
+    agropecuaria_primaria   INTEGER NOT NULL DEFAULT 0 CHECK (agropecuaria_primaria IN (0,1)),
+    residuos_neutralizacao  INTEGER NOT NULL DEFAULT 0 CHECK (residuos_neutralizacao IN (0,1)),
+    UNIQUE (organizacao_id, nome)
+);
+
 CREATE TABLE IF NOT EXISTS atividade (
     id              INTEGER PRIMARY KEY,
     inventario_id   INTEGER NOT NULL REFERENCES inventario(id),
+    instalacao_id   INTEGER REFERENCES instalacao(id),
     descricao       TEXT NOT NULL,
     escopo          INTEGER NOT NULL CHECK (escopo IN (1,2,3)),
     -- remoção por sumidouro: entra nas emissões líquidas (art. 2º, XI; art. 1º, § 4º)
@@ -55,6 +69,8 @@ CREATE TABLE IF NOT EXISTS atividade (
     evidencia       TEXT                    -- nota fiscal, fatura, laudo…
 );
 CREATE INDEX IF NOT EXISTS ix_atividade_inventario ON atividade(inventario_id);
+CREATE INDEX IF NOT EXISTS ix_atividade_instalacao ON atividade(instalacao_id);
+CREATE INDEX IF NOT EXISTS ix_instalacao_org ON instalacao(organizacao_id);
 
 CREATE TABLE IF NOT EXISTS evento_mrv (
     id              INTEGER PRIMARY KEY,
