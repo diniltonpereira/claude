@@ -69,7 +69,7 @@ Escopo original:
 
 ### Fase 3 — Projetos, documentos e campo: projetos concluídos na versão 0.4
 Feito: cadastro georreferenciado (ponto), funil de 7 etapas com checklist e evidência, travas legais (arts. 43, 47 e 49) e parceria com divisão de créditos e registro da assinatura.
-Feito na 0.10: polígono da área com mapa, importação do CAR e checagem de sobreposição. Pendente: integração real de assinatura (gov.br/Clicksign), modelos DOCX e PNCP. Login gov.br (0.5), PWA offline (0.6) e faturas CEMIG (0.7) antivírus nos anexos (0.8) e envio de e-mails (0.9) já foram feitos; PostgreSQL foi adiado com critério em IMPLANTACAO.md.
+Feito na 0.10: polígono da área com mapa, importação do CAR e checagem de sobreposição. Feito na 0.11: assinatura eletrônica avançada gov.br do contrato de parceria. Pendente: assinatura embutida no PDF (PAdES), Clicksign para partes sem conta prata/ouro, modelos DOCX e PNCP. Login gov.br (0.5), PWA offline (0.6) e faturas CEMIG (0.7) antivírus nos anexos (0.8) e envio de e-mails (0.9) já foram feitos; PostgreSQL foi adiado com critério em IMPLANTACAO.md.
 
 Escopo original:
 - Projetos de geração com:

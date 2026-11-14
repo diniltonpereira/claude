@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 10
+VERSAO_ESQUEMA = 11
 VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
@@ -513,7 +513,8 @@ CREATE TABLE IF NOT EXISTS sessao (
     criada_em       TEXT NOT NULL,
     expira_em       TEXT NOT NULL,
     ultimo_uso      TEXT NOT NULL,
-    ip              TEXT
+    ip              TEXT,
+    metodo          TEXT                    -- 'senha' ou 'govbr' (versão 11): o gov.br exige logout no Login Único
 );
 CREATE INDEX IF NOT EXISTS ix_sessao_usuario ON sessao(usuario_id);
 
@@ -529,8 +530,56 @@ CREATE TABLE IF NOT EXISTS oidc_estado (
     state           TEXT PRIMARY KEY,
     nonce           TEXT NOT NULL,
     verificador     TEXT NOT NULL,          -- PKCE code_verifier
-    criado_em       TEXT NOT NULL
+    criado_em       TEXT NOT NULL,
+    -- versão 11: o mesmo mecanismo serve ao login e às etapas da assinatura
+    proposito       TEXT NOT NULL DEFAULT 'login' CHECK (proposito IN ('login','assinatura_identidade','assinatura_iti')),
+    usuario_id      INTEGER REFERENCES usuario(id),
+    dados           TEXT
 );
+
+-- ---------------------------------------------------------------- assinatura eletrônica (versão 11)
+-- Documento PDF que as partes assinam (hoje: o contrato de parceria do projeto). Cada parte assina o
+-- mesmo SHA-256; a assinatura é PKCS#7 destacada (.p7s), conferida contra o hash antes de ser guardada.
+CREATE TABLE IF NOT EXISTS documento_assinatura (
+    id              INTEGER PRIMARY KEY,
+    projeto_id      INTEGER NOT NULL REFERENCES projeto(id),
+    titulo          TEXT NOT NULL,
+    anexo_id        INTEGER NOT NULL REFERENCES anexo(id),
+    sha256          TEXT NOT NULL CHECK (length(sha256) = 64),
+    situacao        TEXT NOT NULL DEFAULT 'aguardando' CHECK (situacao IN ('aguardando','concluido','cancelado')),
+    criado_por      INTEGER NOT NULL REFERENCES usuario(id),
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    concluido_em    TEXT,
+    CHECK ((situacao = 'concluido') = (concluido_em IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS documento_assinatura_aberto ON documento_assinatura (projeto_id)
+    WHERE situacao = 'aguardando';
+
+CREATE TABLE IF NOT EXISTS documento_signatario (
+    documento_id    INTEGER NOT NULL REFERENCES documento_assinatura(id),
+    organizacao_id  INTEGER NOT NULL REFERENCES organizacao(id),
+    parte           TEXT NOT NULL,          -- 'titular' ou 'desenvolvedor'
+    PRIMARY KEY (documento_id, organizacao_id)
+);
+
+CREATE TABLE IF NOT EXISTS assinatura_eletronica (
+    id              INTEGER PRIMARY KEY,
+    documento_id    INTEGER NOT NULL REFERENCES documento_assinatura(id),
+    organizacao_id  INTEGER NOT NULL REFERENCES organizacao(id),
+    usuario_id      INTEGER NOT NULL REFERENCES usuario(id),
+    tipo            TEXT NOT NULL CHECK (tipo IN ('govbr_avancada')),
+    p7s             BLOB NOT NULL,
+    p7s_sha256      TEXT NOT NULL,
+    signatario_nome TEXT NOT NULL,
+    certificado_serial TEXT NOT NULL,
+    certificado_emissor TEXT NOT NULL,
+    assinado_em     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE (documento_id, organizacao_id)
+);
+CREATE TRIGGER IF NOT EXISTS assinatura_sem_update BEFORE UPDATE ON assinatura_eletronica
+BEGIN SELECT RAISE(ABORT, 'assinatura é imutável'); END;
+CREATE TRIGGER IF NOT EXISTS assinatura_sem_delete BEFORE DELETE ON assinatura_eletronica
+BEGIN SELECT RAISE(ABORT, 'assinatura é imutável'); END;
 
 -- Trilha de auditoria geral: quem, quando, de onde, o que havia antes e depois.
 CREATE TABLE IF NOT EXISTS auditoria (
@@ -585,9 +634,23 @@ def _migrar_8_para_9(con: sqlite3.Connection) -> None:
                     "CHECK (avisos_email IN (0,1))")
 
 
+def _migrar_10_para_11(con: sqlite3.Connection) -> None:
+    def colunas(tabela):
+        return {r["name"] for r in con.execute(f"PRAGMA table_info({tabela})")}
+    # Bancos antigos podem nem ter estas tabelas: o ESQUEMA as cria depois, já com as colunas novas.
+    if colunas("sessao") and "metodo" not in colunas("sessao"):
+        con.execute("ALTER TABLE sessao ADD COLUMN metodo TEXT")
+    novas = {"proposito": "TEXT NOT NULL DEFAULT 'login' CHECK (proposito IN "
+                          "('login','assinatura_identidade','assinatura_iti'))",
+             "usuario_id": "INTEGER REFERENCES usuario(id)", "dados": "TEXT"}
+    for nome, tipo in novas.items():
+        if colunas("oidc_estado") and nome not in colunas("oidc_estado"):
+            con.execute(f"ALTER TABLE oidc_estado ADD COLUMN {nome} {tipo}")
+
+
 # Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
 # próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
-MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9, 9: None}
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9, 9: None, 10: _migrar_10_para_11}
 
 
 def migrar(con: sqlite3.Connection, caminho: str = "") -> int:

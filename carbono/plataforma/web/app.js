@@ -50,9 +50,12 @@ async function limparDadosDoAparelho() {
 }
 
 async function sair() {
-  if (producao()) { try { await api("POST", "/auth/logout"); } catch { /* sessão já encerrada */ } }
+  let govbr = null;
+  if (producao()) { try { govbr = (await api("POST", "/auth/logout")).logout_govbr; } catch { /* sessão já encerrada */ } }
   await limparDadosDoAparelho();
-  gravarSessao(null); estado.uid = null; estado.eu = null; estado.csrf = null; location.hash = "#/entrar";
+  gravarSessao(null); estado.uid = null; estado.eu = null; estado.csrf = null;
+  if (govbr) { location.href = govbr; return; }   // encerra também a sessão no Login Único
+  location.hash = "#/entrar";
 }
 
 async function lerErro(r) {
@@ -268,7 +271,7 @@ async function telaEntrarProducao() {
   conteudo.innerHTML = `<section class="entrada bloco">
     <h1>Entrar</h1>
     ${erroGov ? `<p class="erro-campo">${esc(erroGov)}</p>` : ""}
-    ${estado.govbr ? `<p><a class="botao govbr" href="/auth/govbr">Entrar com gov.br</a></p>
+    ${estado.govbr ? `<p><a class="botao govbr" href="/auth/govbr">Entrar com o gov.br</a></p>
       <p class="memoria">Servidores públicos entram com a conta gov.br. Empresas usam e-mail e senha.</p>` : ""}
     <form id="f-login" class="grade">
       <label class="largo">E-mail<input name="email" type="email" autocomplete="username" required></label>
@@ -1460,9 +1463,11 @@ async function telaProjeto(id) {
     <section class="bloco"><h2>Parceria com desenvolvedor</h2>
       ${par ? `<p>${esc(par.desenvolvedor)} <span class="mono">${esc(par.desenvolvedor_cnpj)}</span> · titular ${t(par.percentual_titular)}% · desenvolvedor ${t(par.percentual_desenvolvedor)}%${par.percentual_comunidade ? ` · comunidade ${t(par.percentual_comunidade)}%` : ""}</p>
         <p class="memoria">${par.licitacao_ref ? `Licitação: ${esc(par.licitacao_ref)} · ` : ""}${par.averbacao_ref ? `Averbação: ${esc(par.averbacao_ref)} · ` : ""}${par.assinatura === "assinado" ? `Assinado (${esc(par.assinatura_ref)})` : "Minuta, aguardando assinatura"}</p>
-        ${titular && par.assinatura !== "assinado" ? `<form id="f-ass" class="grade"><label>Referência da assinatura eletrônica<input name="assinatura_ref" required placeholder="gov.br ou Clicksign"></label>
+        ${blocoAssinatura(p, titular)}
+        ${titular && par.assinatura !== "assinado" ? `<details class="alternativa"><summary>Assinado fora da plataforma? Registre a referência</summary>
+          <form id="f-ass" class="grade"><label>Referência da assinatura eletrônica<input name="assinatura_ref" required placeholder="Ex.: assinador ICP-Brasil, processo SEI nº…"></label>
           <label>Averbação no registro de imóveis<input name="averbacao_ref"></label>
-          <div class="acoes largo"><button type="submit" class="botao">Registrar assinatura</button></div><p class="erro-campo largo"></p></form>` : ""}`
+          <div class="acoes largo"><button type="submit" class="botao secundario">Registrar assinatura</button></div><p class="erro-campo largo"></p></form></details>` : ""}`
       : titular ? `<form id="f-par" class="grade">
         <label>CNPJ do desenvolvedor<input name="desenvolvedor_cnpj" pattern="\\d{14}" required></label><label>Razão social<input name="desenvolvedor_nome" required></label>
         <label>% do titular<input name="percentual_titular" type="number" min="0" max="100" step="any" required></label>
@@ -1473,6 +1478,7 @@ async function telaProjeto(id) {
       : `<p class="vazio">Sem parceria.</p>`}</section>`;
   const recarregar = () => telaProjeto(id);
   ligarArea(p, titular, recarregar);
+  ligarAssinatura(p, recarregar);
   conteudo.querySelectorAll("[data-baixar]").forEach((b) => (b.onclick = () => baixar(`/anexos/${b.dataset.baixar}`, b.dataset.nome).catch((e) => avisar(e.message, true))));
   conteudo.querySelectorAll(".f-item").forEach((f) => aoEnviar(f, async (d, form) => {
     const anexo = await anexoDoCampo(form);
@@ -1489,6 +1495,53 @@ async function telaProjeto(id) {
   if (ba) ba.onclick = async () => {
     try { const r = await api("POST", `/projetos/${id}/avanco`); avisar(`Projeto avançou para ${regras.etapas.find((e) => e.codigo === r.etapa).nome}.`); recarregar(); }
     catch (e) { avisar(e.message, true); }
+  };
+}
+
+// ---------------------------------------------------------------- assinatura gov.br do contrato de parceria
+function blocoAssinatura(p, titular) {
+  const d = p.documento_assinatura, par = p.parceria;
+  if (par.assinatura === "assinado" && !d) return "";
+  if (!d || d.situacao === "cancelado") {
+    return titular ? `<form id="f-doc" class="grade"><h3 class="largo">Assinatura eletrônica do contrato</h3>
+      <p class="memoria largo">Envie o contrato de parceria em PDF, na versão final combinada entre as partes. Cada parte assina com a conta gov.br (assinatura avançada, Lei 14.063/2020).</p>
+      <label>Título<input name="titulo" required value="Contrato de parceria — ${esc(p.nome)}"></label>
+      <label>Contrato (PDF)<input type="file" name="arquivo" accept=".pdf" required></label>
+      <div class="acoes largo"><button type="submit" class="botao secundario">Enviar para assinatura</button></div><p class="erro-campo largo"></p></form>` : "";
+  }
+  const partes = d.partes.map((x) => `<li><strong>${esc(x.parte === "titular" ? "Titular" : "Desenvolvedor")}: ${esc(x.organizacao)}</strong>
+    ${x.assinatura_id ? `<div class="memoria"><span class="situacao aprovado">Assinado</span> por ${esc(x.signatario_nome)} em ${data(x.assinado_em)} · certificado ${esc(x.certificado_emissor)} ·
+        <button type="button" class="link" data-p7s="${x.assinatura_id}">baixar assinatura (.p7s)</button></div>`
+      : x.pode_assinar ? (d.assinatura_disponivel
+          ? `<div><button type="button" class="botao govbr" data-assinar="${d.id}">Assinar com o gov.br</button>
+             <p class="memoria">Você entra no gov.br, autoriza o uso do seu certificado e volta para cá. Precisa de conta prata ou ouro.</p></div>`
+          : `<div class="memoria">A assinatura gov.br ainda não foi configurada nesta instalação. Use o registro de assinatura feita fora da plataforma.</div>`)
+      : `<div class="memoria"><span class="situacao submetido">Aguardando</span></div>`}</li>`).join("");
+  return `<div class="assinatura-doc"><h3>${esc(d.titulo)}</h3>
+    <p class="memoria">${d.situacao === "concluido" ? `Assinado por todas as partes em ${data(d.concluido_em)}.` : "Aguardando assinaturas."}
+      SHA-256 <span class="mono">${esc(d.sha256.slice(0, 16))}…</span> · <button type="button" class="link" data-baixar="${d.anexo_id}" data-nome="contrato.pdf">baixar o PDF</button></p>
+    <ul class="obrigacoes">${partes}</ul>
+    <p class="memoria">Para conferir: baixe o PDF e os arquivos .p7s e envie-os ao validador oficial do ITI (<a href="${esc(d.validador)}" target="_blank" rel="noopener">${esc(d.validador.replace("https://", ""))}</a>).</p>
+    ${titular && d.situacao === "aguardando" && !d.partes.some((x) => x.assinatura_id) ? `<button type="button" class="link perigo-texto" id="b-cancelar-doc" data-id="${d.id}">Cancelar e enviar outro PDF</button>` : ""}</div>`;
+}
+
+function ligarAssinatura(p, recarregar) {
+  aoEnviar($("#f-doc"), async (d, form) => {
+    const anexo = await anexoDoCampo(form);
+    await api("POST", `/projetos/${p.id}/documentos-assinatura`, { anexo_id: anexo, titulo: d.titulo });
+    avisar("Contrato enviado para assinatura das partes."); recarregar();
+  });
+  conteudo.querySelectorAll("[data-assinar]").forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try { location.href = (await api("POST", `/documentos-assinatura/${b.dataset.assinar}/inicio`)).url; }
+    catch (e) { b.disabled = false; avisar(e.message, true); }
+  }));
+  conteudo.querySelectorAll("[data-p7s]").forEach((b) => (b.onclick = () =>
+    baixar(`/assinaturas/${b.dataset.p7s}/p7s`, `assinatura-${b.dataset.p7s}.p7s`).catch((e) => avisar(e.message, true))));
+  const bc = $("#b-cancelar-doc");
+  if (bc) bc.onclick = async () => {
+    if (!(await confirmar("Cancelar o documento?", "Ninguém assinou ainda. Depois de cancelar, você poderá enviar outro PDF.", "Cancelar documento"))) return;
+    try { await api("POST", `/documentos-assinatura/${bc.dataset.id}/cancelamento`); recarregar(); } catch (e) { avisar(e.message, true); }
   };
 }
 
@@ -1656,6 +1709,23 @@ async function telaVerificar(tipo, codigo) {
 
 // ---------------------------------------------------------------- rotas
 const PUBLICAS = new Set(["entrar", "inicio", "transparencia", "verificar", "definir-senha", "privacidade"]);
+/** Mensagens que voltam na URL depois de um redirecionamento (gov.br, ITI). */
+function avisoDeRetorno() {
+  const [caminho, consulta] = location.hash.split("?");
+  if (!consulta) return;
+  const q = new URLSearchParams(consulta);
+  const ass = q.get("assinatura"), erro = q.get("erro");
+  if (ass === "ok") avisar("Assinatura registrada. Falta a assinatura da outra parte.");
+  else if (ass === "concluida") avisar("Documento assinado por todas as partes. A parceria está assinada.");
+  else if (ass === "bronze") {
+    conteudo.insertAdjacentHTML("afterbegin", `<section class="bloco alerta-bloco" role="alert"><h2>Assinatura não realizada</h2>
+      <p>É necessário possuir conta gov.br nível prata ou ouro para utilizar o serviço de assinatura.
+      <a href="${esc(estado.elevarConta || "https://confiabilidades.acesso.gov.br/")}" target="_blank" rel="noopener">Clique aqui</a> para realizar o upgrade da conta.</p></section>`);
+  }
+  if (erro) avisar(erro, true);
+  history.replaceState(null, "", caminho);   // não repete a mensagem ao recarregar
+}
+
 async function navegar() {
   const [caminho] = location.hash.split("?");
   const [, rota = "inicio", a, b] = caminho.split("/");
@@ -1676,6 +1746,7 @@ async function navegar() {
       "definir-senha": () => telaDefinirSenha(a), pendentes: telaPendentes, privacidade: telaPrivacidade, termos: telaTermos, conta: telaConta,
     };
     await (telas[rota] || telaInicio)();
+    if (rota !== "entrar") avisoDeRetorno();
   } catch (e) {
     if (e instanceof Obsoleta) return;
     if (e.status === 401) { gravarSessao(null); estado.eu = null; estado.csrf = null; location.hash = "#/entrar"; return; }
@@ -1699,7 +1770,8 @@ window.addEventListener("unhandledrejection", (ev) => {
 (async function iniciar() {
   try {
     const cfg = await (await fetch("/auth/config")).json();
-    Object.assign(estado, { modo: cfg.modo, govbr: cfg.govbr, termosVersao: cfg.termos_versao, mapa: cfg.mapa || null });
+    Object.assign(estado, { modo: cfg.modo, govbr: cfg.govbr, termosVersao: cfg.termos_versao, mapa: cfg.mapa || null,
+      assinaturaGovbr: cfg.assinatura_govbr, elevarConta: cfg.elevar_conta });
   } catch { /* mantém produção */ }
   if (producao()) {
     try { await carregarSessao(); } catch { estado.eu = null; }

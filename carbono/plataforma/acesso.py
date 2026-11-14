@@ -17,7 +17,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
+import re
 import secrets
 import sqlite3
 import struct
@@ -121,13 +123,15 @@ def uri_totp(segredo: str, email: str, emissor: str = "CarbonMG") -> str:
 
 
 # ---------------------------------------------------------------- sessões
-def _criar_sessao(con, usuario_id: int, ip: str | None, pendente_2fa: bool = False) -> tuple[str, str]:
+def _criar_sessao(con, usuario_id: int, ip: str | None, pendente_2fa: bool = False,
+                  metodo: str = "senha") -> tuple[str, str]:
     token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
     agora = _agora()
     validade = timedelta(minutes=5) if pendente_2fa else timedelta(hours=SESSAO_HORAS)
-    con.execute("""INSERT INTO sessao (token_hash, usuario_id, csrf, pendente_2fa, criada_em, expira_em, ultimo_uso, ip)
-                   VALUES (?,?,?,?,?,?,?,?)""",
-                (_sha(token), usuario_id, csrf, int(pendente_2fa), _iso(agora), _iso(agora + validade), _iso(agora), ip))
+    con.execute("""INSERT INTO sessao (token_hash, usuario_id, csrf, pendente_2fa, criada_em, expira_em, ultimo_uso,
+                   ip, metodo) VALUES (?,?,?,?,?,?,?,?,?)""",
+                (_sha(token), usuario_id, csrf, int(pendente_2fa), _iso(agora), _iso(agora + validade), _iso(agora), ip,
+                 metodo))
     return token, csrf
 
 
@@ -253,55 +257,118 @@ def definir_senha(con: sqlite3.Connection, token: str, senha: str) -> None:
 
 
 # ---------------------------------------------------------------- gov.br (OpenID Connect)
+# Roteiro técnico do Login Único (acesso.gov.br/roteiro-tecnico): PKCE obrigatório; o nível da conta
+# (bronze, prata, ouro) vem no id_token com o escopo govbr_confiabilidades_idtoken; o id_token é
+# conferido pela chave pública publicada em /jwk; o logout no Login Único é obrigatório.
+ESCOPO_GOVBR = "openid email profile govbr_confiabilidades_idtoken"
+NIVEIS_ASSINATURA = ("silver", "gold")      # conta bronze não assina (manual da API de assinatura)
+URL_ELEVAR_CONTA = "https://confiabilidades.acesso.gov.br/"
+
+
 def config_govbr() -> dict | None:
     cid, seg, red = (os.environ.get(k) for k in ("GOVBR_CLIENT_ID", "GOVBR_CLIENT_SECRET", "GOVBR_REDIRECT_URI"))
     if not (cid and seg and red):
         return None
     base = os.environ.get("GOVBR_URL", "https://sso.staging.acesso.gov.br").rstrip("/")
     return {"client_id": cid, "client_secret": seg, "redirect_uri": red, "authorize": f"{base}/authorize",
-            "token": f"{base}/token", "userinfo": f"{base}/userinfo/"}
+            "token": f"{base}/token", "jwk": f"{base}/jwk", "logout": f"{base}/logout",
+            "issuer": os.environ.get("GOVBR_ISSUER", f"{base}/")}
 
 
-def govbr_url_login(con: sqlite3.Connection) -> str:
+def govbr_url_logout() -> str | None:
+    """Endereço de logout no Login Único, com retorno ao painel (URL cadastrada na credencial)."""
+    cfg = config_govbr()
+    retorno = os.environ.get("GOVBR_LOGOUT_REDIRECT_URI") or (
+        os.environ["CARBONO_URL_PUBLICA"].rstrip("/") + "/painel/" if os.environ.get("CARBONO_URL_PUBLICA") else None)
+    if not cfg or not retorno:
+        return None
+    return cfg["logout"] + "?" + urlencode({"post_logout_redirect_uri": retorno})
+
+
+def novo_estado(con: sqlite3.Connection, proposito: str, usuario_id: int | None = None,
+                dados: dict | None = None) -> tuple[str, str, str]:
+    """Cria state, nonce e verificador PKCE de uso único (10 minutos)."""
+    state, nonce, verificador = (secrets.token_urlsafe(32) for _ in range(3))
+    con.execute("DELETE FROM oidc_estado WHERE criado_em < ?", (_iso(_agora() - timedelta(minutes=10)),))
+    con.execute("INSERT INTO oidc_estado (state, nonce, verificador, criado_em, proposito, usuario_id, dados) "
+                "VALUES (?,?,?,?,?,?,?)", (state, nonce, verificador, _iso(_agora()), proposito, usuario_id,
+                                            json.dumps(dados) if dados else None))
+    return state, nonce, verificador
+
+
+def consumir_estado(con: sqlite3.Connection, state: str, proposito: str) -> sqlite3.Row:
+    e = con.execute("SELECT * FROM oidc_estado WHERE state=?", (state,)).fetchone()
+    con.execute("DELETE FROM oidc_estado WHERE state=?", (state,))
+    if e is None or e["proposito"] != proposito or \
+            datetime.fromisoformat(e["criado_em"]) < _agora() - timedelta(minutes=10):
+        raise NaoAutorizado("Pedido expirado ou inválido. Tente de novo.")
+    return e
+
+
+def govbr_url(con: sqlite3.Connection, proposito: str = "login", usuario_id: int | None = None,
+              dados: dict | None = None) -> str:
     cfg = config_govbr()
     if not cfg:
         raise ErroNegocio("Login gov.br não configurado.")
-    state, nonce, verificador = (secrets.token_urlsafe(32) for _ in range(3))
+    state, nonce, verificador = novo_estado(con, proposito, usuario_id, dados)
     desafio = base64.urlsafe_b64encode(hashlib.sha256(verificador.encode()).digest()).decode().rstrip("=")
-    con.execute("DELETE FROM oidc_estado WHERE criado_em < ?", (_iso(_agora() - timedelta(minutes=10)),))
-    con.execute("INSERT INTO oidc_estado (state, nonce, verificador, criado_em) VALUES (?,?,?,?)",
-                (state, nonce, verificador, _iso(_agora())))
     return cfg["authorize"] + "?" + urlencode({
-        "response_type": "code", "client_id": cfg["client_id"], "scope": "openid email profile",
+        "response_type": "code", "client_id": cfg["client_id"], "scope": ESCOPO_GOVBR,
         "redirect_uri": cfg["redirect_uri"], "state": state, "nonce": nonce,
         "code_challenge": desafio, "code_challenge_method": "S256"})
 
 
-def govbr_callback(con: sqlite3.Connection, code: str, state: str, ip: str | None = None, cliente=None) -> dict:
-    """Troca o código pelo token, lê o CPF no userinfo e abre a sessão do servidor já cadastrado."""
+def govbr_url_login(con: sqlite3.Connection) -> str:
+    return govbr_url(con, "login")
+
+
+def _validar_id_token(http, cfg: dict, id_token: str, nonce: str) -> dict:
+    import jwt
+    try:
+        cab = jwt.get_unverified_header(id_token)
+        chaves = http.get(cfg["jwk"]).json().get("keys") or []
+        chave = next((k for k in chaves if k.get("kid") == cab.get("kid")), chaves[0] if len(chaves) == 1 else None)
+        if chave is None:
+            raise NaoAutorizado("Chave do gov.br não encontrada para conferir a identidade.")
+        claims = jwt.decode(id_token, jwt.PyJWK(chave).key, algorithms=["RS256"], audience=cfg["client_id"],
+                            issuer=cfg["issuer"], leeway=30, options={"require": ["exp", "iat", "iss", "aud", "sub"]})
+    except jwt.PyJWTError as exc:
+        raise NaoAutorizado("Não foi possível confirmar a identidade no gov.br.") from exc
+    if not hmac.compare_digest(str(claims.get("nonce", "")), nonce):
+        raise NaoAutorizado("Resposta do gov.br não corresponde a este pedido.")
+    return claims
+
+
+def govbr_trocar_codigo(con: sqlite3.Connection, code: str, state: str, proposito: str,
+                        cliente=None) -> tuple[sqlite3.Row, dict]:
+    """Troca o código pelo token e confere o id_token. Devolve (estado, {cpf, nome, nivel})."""
     import httpx
     cfg = config_govbr()
     if not cfg:
         raise ErroNegocio("Login gov.br não configurado.")
-    e = con.execute("SELECT * FROM oidc_estado WHERE state=?", (state,)).fetchone()
-    con.execute("DELETE FROM oidc_estado WHERE state=?", (state,))
-    if e is None or datetime.fromisoformat(e["criado_em"]) < _agora() - timedelta(minutes=10):
-        raise NaoAutorizado("Login expirado ou inválido. Tente de novo.")
+    e = consumir_estado(con, state, proposito)
     http = cliente or httpx.Client(timeout=15)
     r = http.post(cfg["token"], data={"grant_type": "authorization_code", "code": code,
                                       "redirect_uri": cfg["redirect_uri"], "code_verifier": e["verificador"]},
                   auth=(cfg["client_id"], cfg["client_secret"]))
-    if r.status_code != 200:
+    if r.status_code != 200 or not r.json().get("id_token"):
         raise NaoAutorizado("O gov.br recusou a autenticação.")
-    acesso = r.json().get("access_token")
-    info = http.get(cfg["userinfo"], headers={"Authorization": f"Bearer {acesso}"})
-    if info.status_code != 200 or not info.json().get("sub"):
-        raise NaoAutorizado("Não foi possível obter a identificação no gov.br.")
-    u = con.execute("SELECT * FROM usuario WHERE cpf_hmac=? AND ativo=1", (cpf_hmac(info.json()["sub"]),)).fetchone()
+    claims = _validar_id_token(http, cfg, r.json()["id_token"], e["nonce"])
+    cpf = re.sub(r"\D", "", str(claims.get("preferred_username") or claims["sub"]))
+    if len(cpf) != 11:
+        raise NaoAutorizado("O gov.br não informou um CPF válido.")
+    return e, {"cpf": cpf, "nome": claims.get("name") or "",
+               "nivel": (claims.get("reliability_info") or {}).get("level")}
+
+
+def govbr_callback(con: sqlite3.Connection, code: str, state: str, ip: str | None = None, cliente=None) -> dict:
+    """Login: abre a sessão do servidor já cadastrado pelo CPF (não há autocadastro)."""
+    _, info = govbr_trocar_codigo(con, code, state, "login", cliente)
+    u = con.execute("SELECT * FROM usuario WHERE cpf_hmac=? AND ativo=1", (cpf_hmac(info["cpf"]),)).fetchone()
     if u is None:
         raise NaoAutorizado("CPF não cadastrado nesta plataforma. Peça o cadastro à administração do órgão.")
-    token, csrf = _criar_sessao(con, u["id"], ip)
-    registrar(con, u["id"], "login", "usuario", u["id"], depois={"metodo": "govbr"})
+    token, csrf = _criar_sessao(con, u["id"], ip, metodo="govbr")
+    registrar(con, u["id"], "login", "usuario", u["id"], depois={"metodo": "govbr", "nivel": info["nivel"]})
     return {"token": token, "csrf": csrf}
 
 

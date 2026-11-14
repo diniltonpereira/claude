@@ -6,6 +6,7 @@ checagem de papéis (ver docs/ARQUITETURA.md).
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import mimetypes
 import io
@@ -23,7 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (acesso, anexos, antivirus, auditoria, compensacao, envio, faturas, geo, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+from . import (acesso, anexos, antivirus, assinatura, auditoria, compensacao, envio, faturas, geo, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
                terceirizadas)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar, transacao
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
@@ -371,6 +372,11 @@ class CodigoIn(BaseModel):
     codigo: str = Field(pattern=r"^\d{6}$")
 
 
+class DocumentoAssinaturaIn(BaseModel):
+    anexo_id: int
+    titulo: str = Field(min_length=3, max_length=200)
+
+
 class AreaIn(BaseModel):
     geojson: dict
     origem: str | None = Field(default=None, max_length=200)
@@ -533,6 +539,7 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     @app.get("/auth/config")
     def auth_config():
         return {"modo": modo, "govbr": bool(acesso.config_govbr()), "termos_versao": acesso.TERMOS_VERSAO,
+                "assinatura_govbr": assinatura.disponivel(), "elevar_conta": acesso.URL_ELEVAR_CONTA,
                 "mapa": {"tiles": MAPA_TILES, "atribuicao": MAPA_ATRIBUICAO}}
 
     def _exigir_producao():
@@ -559,9 +566,12 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
 
     @app.post("/auth/logout")
     def logout(request: Request, u=Depends(usuario), c=Depends(db)):
+        s = c.execute("SELECT metodo FROM sessao WHERE token_hash=?",
+                      (hashlib.sha256((request.cookies.get(COOKIE) or "").encode()).hexdigest(),)).fetchone()
         acesso.encerrar(c, request.cookies.get(COOKIE))
         auditoria.registrar(c, u["id"], "logout", "usuario", u["id"])
-        resp = JSONResponse({"ok": True})
+        # Quem entrou pelo gov.br sai também do Login Único (exigência da integração)
+        resp = JSONResponse({"ok": True, "logout_govbr": acesso.govbr_url_logout() if s and s["metodo"] == "govbr" else None})
         resp.delete_cookie(COOKIE, path="/")
         return resp
 
@@ -573,6 +583,9 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     @app.get("/auth/govbr/retorno", include_in_schema=False)
     def govbr_retorno(request: Request, code: str = "", state: str = "", c=Depends(db)):
         _exigir_producao()
+        e = c.execute("SELECT proposito FROM oidc_estado WHERE state=?", (state,)).fetchone()
+        if e and e["proposito"] == "assinatura_identidade":
+            return _assinatura_identidade(request, code, state, c)
         try:
             r = acesso.govbr_callback(c, code, state, request.client.host if request.client else None)
         except (NaoAutorizado, ErroNegocio) as exc:
@@ -581,6 +594,67 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
         resp = RedirectResponse("/painel/#/inicio", status_code=302)
         _abrir_sessao(resp, r["token"])
         return resp
+
+    # ---------------- assinatura eletrônica gov.br ----------------
+    def _usuario_da_sessao(request: Request, c) -> sqlite3.Row | None:
+        try:
+            return buscar(c, "usuario", acesso.sessao_por_token(c, request.cookies.get(COOKIE))["usuario_id"])
+        except (acesso.SessaoInvalida, NaoEncontrado):
+            return None
+
+    def _voltar(destino: str, **aviso) -> RedirectResponse:
+        from urllib.parse import urlencode as _ue
+        return RedirectResponse(f"/painel/#/{destino}" + (f"?{_ue(aviso)}" if aviso else ""), status_code=302)
+
+    def _assinatura_identidade(request: Request, code: str, state: str, c):
+        u = _usuario_da_sessao(request, c)
+        if u is None:
+            return _voltar("entrar", erro="Sua sessão expirou. Entre de novo e repita a assinatura.")
+        try:
+            return RedirectResponse(assinatura.apos_identidade(c, u["id"], code, state), status_code=302)
+        except assinatura.ContaBronze:
+            return _voltar("projetos", assinatura="bronze")
+        except (NaoAutorizado, ErroNegocio) as exc:
+            return _voltar("projetos", erro=str(exc))
+
+    @app.get("/assinaturas/iti/retorno", include_in_schema=False)
+    def iti_retorno(request: Request, code: str = "", state: str = "", c=Depends(db)):
+        """Retorno da autorização do certificado (URL cadastrada na credencial da API de assinatura)."""
+        _exigir_producao()
+        u = _usuario_da_sessao(request, c)
+        if u is None:
+            return _voltar("entrar", erro="Sua sessão expirou. Entre de novo e repita a assinatura.")
+        if not code:
+            c.execute("DELETE FROM oidc_estado WHERE state=?", (state,))
+            return _voltar("projetos", erro="A autorização do certificado foi cancelada.")
+        try:
+            r = assinatura.apos_autorizacao(c, u["id"], code, state)
+        except assinatura.ContaBronze:
+            return _voltar("projetos", assinatura="bronze")
+        except (NaoAutorizado, ErroNegocio) as exc:
+            return _voltar("projetos", erro=str(exc))
+        return _voltar(f"projetos/{r['projeto_id']}", assinatura="concluida" if r["concluido"] else "ok")
+
+    @app.post("/projetos/{pid}/documentos-assinatura", status_code=201)
+    def criar_documento_assinatura(pid: int, d: DocumentoAssinaturaIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": assinatura.criar_documento(c, u["id"], pid, anexo_id=d.anexo_id, titulo=d.titulo)}
+
+    @app.post("/documentos-assinatura/{did}/cancelamento")
+    def cancelar_documento_assinatura(did: int, u=Depends(usuario), c=Depends(db)):
+        assinatura.cancelar_documento(c, u["id"], did)
+        return {"ok": True}
+
+    @app.post("/documentos-assinatura/{did}/inicio")
+    def iniciar_assinatura(did: int, u=Depends(usuario), c=Depends(db)):
+        """Devolve o endereço do Login Único; o painel leva o navegador até lá."""
+        _exigir_producao()
+        return {"url": assinatura.iniciar(c, u["id"], did)}
+
+    @app.get("/assinaturas/{aid}/p7s")
+    def baixar_p7s(aid: int, u=Depends(usuario), c=Depends(db)):
+        conteudo, nome = assinatura.p7s(c, u["id"], aid)
+        return Response(conteudo, media_type="application/pkcs7-signature",
+                        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
     @app.post("/auth/definir-senha")
     def definir_senha(d: DefinirSenhaIn, c=Depends(db)):
@@ -1167,7 +1241,7 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
 
     @app.get("/projetos/{pid}")
     def ver_projeto(pid: int, u=Depends(usuario), c=Depends(db)):
-        return projetos.ver(c, u["id"], pid)
+        return {**projetos.ver(c, u["id"], pid), "documento_assinatura": assinatura.situacao(c, pid, u["id"])}
 
     @app.patch("/projetos/{pid}")
     def atualizar_projeto(pid: int, d: ProjetoAtualizacaoIn, u=Depends(usuario), c=Depends(db)):

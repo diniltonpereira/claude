@@ -66,15 +66,17 @@ O cookie de sessão é `Secure`: em produção, o acesso **tem** de ser por HTTP
 
 1. O **órgão** solicita a integração com o Login Único no portal gov.br e cadastra:
    - URL de retorno: `https://SEU_ENDERECO/auth/govbr/retorno`;
-   - escopos: `openid email profile`.
+   - escopos: `openid email profile govbr_confiabilidades_idtoken` (o último traz o nível da conta, usado na assinatura).
 2. Primeiro em homologação (`GOVBR_URL=https://sso.staging.acesso.gov.br`), depois em produção (`https://sso.acesso.gov.br`).
-3. Preencha `GOVBR_CLIENT_ID`, `GOVBR_CLIENT_SECRET` e `GOVBR_REDIRECT_URI` no `.env` e reinicie. O botão "Entrar com gov.br" aparece sozinho.
+3. Cadastre também a **URL de logout**: `https://SEU_ENDERECO/painel/` (ou o valor de `GOVBR_LOGOUT_REDIRECT_URI`). Quem entrou pelo gov.br, ao sair, passa pelo logout do Login Único, como a integração exige.
+4. Preencha `GOVBR_CLIENT_ID`, `GOVBR_CLIENT_SECRET` e `GOVBR_REDIRECT_URI` no `.env` e reinicie. O botão "Entrar com o gov.br" aparece sozinho.
 
 **Como funciona:**
 - fluxo authorization code com PKCE (S256), `state` e `nonce` de uso único, válidos por 10 minutos;
-- o CPF vem do endpoint userinfo e é comparado por HMAC. Não há autocadastro: o servidor precisa ter sido cadastrado antes.
+- o `id_token` é conferido com a chave pública publicada em `/jwk` (assinatura, emissor, destinatário, validade e `nonce`);
+- o CPF vem do `id_token` e é comparado por HMAC. Não há autocadastro: o servidor precisa ter sido cadastrado antes.
 
-**Confira no manual de integração vigente do gov.br** os caminhos `/authorize`, `/token` e `/userinfo/` e o formato da claim `sub`. Se mudarem, ajuste `acesso.config_govbr`.
+**Confira no roteiro técnico vigente** (acesso.gov.br/roteiro-tecnico) os caminhos `/authorize`, `/token`, `/jwk` e `/logout` e o emissor (`iss`). Se mudarem, ajuste `acesso.config_govbr` ou defina `GOVBR_ISSUER`.
 
 ## 4. Rotinas
 
@@ -223,3 +225,33 @@ Nesse modo, a entrada é pelo número do usuário (cabeçalho `X-Usuario-Id`), s
 - **Área calculada:** é uma conferência, com erro típico abaixo de 0,5%. A área oficial continua sendo a do CAR, da matrícula ou do levantamento georreferenciado.
 - **Fundo do mapa:** o padrão é o OpenStreetMap, adequado ao piloto pela política de uso justo do OSM. Em produção, configure `CARBONO_MAPA_TILES` com um provedor contratado ou com o servidor de mapas do Estado (modelo XYZ, `{z}/{x}/{y}`). Imagem de satélite ajuda a desenhar a área, mas confira a licença do provedor. Sem acesso ao fundo, o polígono continua aparecendo sobre fundo liso.
 - **Acessibilidade:** desenhar exige mouse ou toque; a importação do arquivo é o caminho equivalente para quem usa teclado ou leitor de tela.
+
+## 12. Assinatura eletrônica gov.br dos contratos de parceria
+
+Assinatura eletrônica **avançada** (Lei 14.063/2020, art. 4º, II), gratuita, pela API de assinatura do ITI, conforme o "Roteiro de Integração API Assinatura avançada gov.br".
+
+- **Credenciais:**
+  - só um **gestor público** pode pedir, pelo "Serviço de Integração aos Produtos do Ecossistema da Conta Digital GOV.BR" (portal gov.br). A homologação sai em até 3 dias úteis e a produção em até 5;
+  - **a produção exige** que o sistema já esteja integrado ao Login Único (seção 3) e hospedado em **domínio oficial de governo** (por exemplo, `carbonmg.valeverde.mg.gov.br`), conforme os arts. 3º e 5º da Portaria SGD/MGI nº 7.076/2024;
+  - cadastre a URL de retorno `https://SEU_ENDERECO/assinaturas/iti/retorno` e preencha `ITI_CLIENT_ID`, `ITI_CLIENT_SECRET` e `ITI_REDIRECT_URI`. Os endereços padrão são os de homologação; em produção, defina `ITI_OAUTH_URL` e `ITI_API_URL` com os informados junto com a credencial.
+- **Como funciona para quem assina:**
+  1. o titular envia o contrato final em PDF na página do projeto ("Enviar para assinatura");
+  2. cada parte (titular e desenvolvedor) clica em "Assinar com o gov.br". Quem entrou com e-mail e senha também passa pelo Login Único nesse momento;
+  3. conta **bronze** é barrada antes da autorização, com a mensagem e o link oficiais para elevar o nível;
+  4. a pessoa autoriza o uso do certificado gov.br (código no aplicativo gov.br ou SMS) e volta à plataforma;
+  5. quando todas as partes assinam, a parceria fica marcada como assinada e o funil do projeto segue.
+- **O que a plataforma confere antes de guardar cada assinatura:** que o pacote PKCS#7 assina exatamente o SHA-256 do PDF, que a assinatura confere com a chave do certificado e que o CPF do certificado é o da conta gov.br usada. Na primeira assinatura, o CPF (só como HMAC) fica vinculado ao usuário; nas seguintes, precisa ser o mesmo.
+- **Formato:** assinatura **destacada**, um arquivo `.p7s` por parte, junto do PDF. Para validar juridicamente, inclusive a cadeia do certificado, envie o PDF e os `.p7s` ao validador do ITI: `validar.iti.gov.br` (produção) ou `validar.staging.iti.br` (homologação). Os links ficam na página do projeto.
+- **Homologação no gov.br:** o processo pede um vídeo com a barra de endereços visível, mostrando:
+  - entrada pelo gov.br e entrada por e-mail e senha;
+  - conta bronze barrada;
+  - conta prata ou ouro assinando;
+  - download do PDF e dos `.p7s`;
+  - logout.
+  
+  O roteiro está todo coberto pelo painel.
+- **Sem credenciais:** o botão de assinatura não aparece. Fica disponível "Assinado fora da plataforma? Registre a referência", para contratos assinados em outro sistema (SEI, assinador ICP-Brasil).
+- **Ainda não implementado:**
+  - assinatura embutida no próprio PDF (PAdES);
+  - assinatura qualificada ICP-Brasil (escopo `icp_brasil` da mesma API);
+  - um provedor privado (como a Clicksign) para partes que não tenham conta gov.br prata ou ouro.

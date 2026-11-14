@@ -286,3 +286,10 @@ details summary { cursor: pointer; color: var(--mata); font-size: .9rem; margin:
 .previa h3 { margin-top: 0; }
 .leaflet-container { font: inherit; }
 @media (max-width: 640px) { .mapa { height: 280px; } }
+
+/* ---------------------------------------------------------------- assinatura gov.br */
+.assinatura-doc { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--linha); }
+.assinatura-doc h3 { margin-top: 0; }
+details.alternativa { margin-top: 1rem; }
+details.alternativa summary { cursor: pointer; color: var(--tinta-suave); }
+.alerta-bloco { border-color: var(--ambar); background: var(--ambar-fundo); }

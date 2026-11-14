@@ -139,45 +139,59 @@ def test_convite_define_senha_uma_vez(prod):
     assert entrar(cli, "f@pref.gov.br")["segundo_fator"] is False
 
 
-class _Resp:
-    def __init__(self, status, dados):
-        self.status_code, self._d = status, dados
-
-    def json(self):
-        return self._d
-
-
-class _GovBrFalso:
-    def __init__(self, cpf):
-        self.cpf, self.chamadas = cpf, []
-
-    def post(self, url, data, auth):
-        self.chamadas.append(("post", url, data))
-        return _Resp(200, {"access_token": "tok"})
-
-    def get(self, url, headers):
-        self.chamadas.append(("get", url, headers))
-        return _Resp(200, {"sub": self.cpf})
-
-
-def test_govbr_pkce_state_e_cpf_por_hmac(prod, monkeypatch):
+def _govbr_env(monkeypatch):
     for k, v in {"GOVBR_CLIENT_ID": "cid", "GOVBR_CLIENT_SECRET": "seg",
-                 "GOVBR_REDIRECT_URI": "https://carbonmg.exemplo/auth/govbr/retorno"}.items():
+                 "GOVBR_REDIRECT_URI": "https://carbonmg.exemplo/auth/govbr/retorno",
+                 "CARBONO_URL_PUBLICA": "https://carbonmg.exemplo"}.items():
         monkeypatch.setenv(k, v)
+
+
+def test_govbr_pkce_id_token_nonce_e_cpf_por_hmac(prod, monkeypatch):
+    from .govbr_falso import GovBrFalso
+    _govbr_env(monkeypatch)
     c = prod["c"]
     c.execute("UPDATE usuario SET cpf_hmac=? WHERE id=?", (acesso.cpf_hmac("123.456.789-09"), prod["gestor"]))
     url = acesso.govbr_url_login(c)
-    assert "code_challenge_method=S256" in url and "state=" in url
-    state = url.split("state=")[1].split("&")[0]
-    falso = _GovBrFalso("12345678909")
-    r = acesso.govbr_callback(c, "codigo", state, cliente=falso)
-    assert r["token"] and falso.chamadas[0][2]["code_verifier"]
+    assert "code_challenge_method=S256" in url and "govbr_confiabilidades_idtoken" in url
+    gov = GovBrFalso("12345678909")
+    code, state = gov.autorizar(url)
+    r = acesso.govbr_callback(c, code, state, cliente=gov.cliente)
+    assert r["token"]
+    assert c.execute("SELECT metodo FROM sessao WHERE usuario_id=? AND metodo='govbr'", (prod["gestor"],)).fetchone()
     with pytest.raises(Exception, match="expirado"):  # state não pode ser reutilizado
-        acesso.govbr_callback(c, "codigo", state, cliente=falso)
-    state2 = acesso.govbr_url_login(c).split("state=")[1].split("&")[0]
+        acesso.govbr_callback(c, code, state, cliente=gov.cliente)
+    # nonce diferente do pedido: recusa (resposta de outro login)
+    code2, state2 = gov.autorizar(acesso.govbr_url_login(c))
+    gov.nonce_por_code[code2] = "outro"
+    with pytest.raises(Exception, match="não corresponde"):
+        acesso.govbr_callback(c, code2, state2, cliente=gov.cliente)
+    # id_token de outro aplicativo (aud diferente): recusa
+    outro = GovBrFalso("12345678909", client_id="app-de-terceiro")
+    code3, state3 = outro.autorizar(acesso.govbr_url_login(c))
+    with pytest.raises(Exception, match="confirmar a identidade"):
+        acesso.govbr_callback(c, code3, state3, cliente=outro.cliente)
+    desconhecido = GovBrFalso("98765432100")
+    code4, state4 = desconhecido.autorizar(acesso.govbr_url_login(c))
     with pytest.raises(Exception, match="CPF não cadastrado"):
-        acesso.govbr_callback(c, "codigo", state2, cliente=_GovBrFalso("98765432100"))
+        acesso.govbr_callback(c, code4, state4, cliente=desconhecido.cliente)
     assert c.execute("SELECT COUNT(*) FROM usuario WHERE cpf_hmac LIKE '%123%456%'").fetchone()[0] == 0
+
+
+def test_logout_de_quem_entrou_pelo_govbr_passa_pelo_login_unico(prod, monkeypatch):
+    from .govbr_falso import GovBrFalso
+    _govbr_env(monkeypatch)
+    c, cli = prod["c"], prod["cli"]
+    c.execute("UPDATE usuario SET cpf_hmac=? WHERE id=?", (acesso.cpf_hmac("12345678909"), prod["gestor"]))
+    gov = GovBrFalso("12345678909")
+    code, state = gov.autorizar(acesso.govbr_url_login(c))
+    r = acesso.govbr_callback(c, code, state, cliente=gov.cliente)
+    cli.cookies.set("carbonmg_sessao", r["token"])
+    saida = cli.post("/auth/logout", headers={"X-CSRF-Token": r["csrf"]}).json()
+    assert saida["logout_govbr"] == ("https://sso.staging.acesso.gov.br/logout?post_logout_redirect_uri="
+                                     "https%3A%2F%2Fcarbonmg.exemplo%2Fpainel%2F")
+    entrar(cli)  # login por senha: sem logout no gov.br
+    csrf = cli.get("/eu").json()["csrf"]
+    assert cli.post("/auth/logout", headers={"X-CSRF-Token": csrf}).json()["logout_govbr"] is None
 
 
 def test_lgpd_politica_exportacao_e_anonimizacao(prod):
