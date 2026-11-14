@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (acesso, anexos, auditoria, compensacao, faturas, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+from . import (acesso, anexos, antivirus, auditoria, compensacao, faturas, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
                terceirizadas)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar, transacao
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
@@ -401,6 +401,9 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     producao = modo == "producao"
     if producao:
         acesso.segredo_servidor()  # falha cedo se CARBONO_SEGREDO não estiver definido
+        if antivirus.obrigatorio() and not antivirus.alvo():
+            raise RuntimeError("Defina CARBONO_CLAMAV (ex.: clamav:3310) para examinar os anexos, ou "
+                               "CARBONO_ANTIVIRUS=desativado assumindo o risco (modo produção).")
     cookie_seguro = producao and os.environ.get("CARBONO_COOKIE_INSEGURO") != "1"
     app = FastAPI(title=f"{NOME} — API",
                   description="Inventário de emissões, gestão de terceirizadas, registro e compensação "
@@ -418,6 +421,12 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     @app.exception_handler(NaoAutorizado)
     async def _aut(_: Request, exc: NaoAutorizado):
         return JSONResponse(status_code=403, content={"erro": str(exc)})
+
+    @app.exception_handler(antivirus.AntivirusIndisponivel)
+    async def _av(_: Request, exc: antivirus.AntivirusIndisponivel):
+        log.error(json.dumps({"evento": "antivirus_indisponivel", "detalhe": str(exc)}))
+        return JSONResponse(status_code=503, content={
+            "erro": "O exame de vírus está temporariamente indisponível; o arquivo não foi aceito. Tente em instantes."})
 
     @app.exception_handler(NaoEncontrado)
     async def _nf(_: Request, exc: NaoEncontrado):
@@ -617,7 +626,12 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     @app.get("/saude")
     def saude(c=Depends(db)):
         c.execute("SELECT 1").fetchone()
-        return {"status": "ok", "plataforma": NOME}
+        av = antivirus.situacao() if antivirus.obrigatorio() else "desativado"
+        corpo = {"status": "ok", "plataforma": NOME, "antivirus": av}
+        if producao and av == "indisponivel":
+            corpo["status"] = "degradado"
+            return JSONResponse(corpo, status_code=503)
+        return corpo
 
     @app.get("/sbce/calendario")
     def ver_calendario(fase1_prorrogada: bool = True):

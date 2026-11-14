@@ -21,6 +21,7 @@ def prod(tmp_path, monkeypatch):
     monkeypatch.setenv("CARBONO_MODO", "producao")
     monkeypatch.setenv("CARBONO_SEGREDO", SEGREDO)
     monkeypatch.setenv("CARBONO_COOKIE_INSEGURO", "1")  # TestClient usa http
+    monkeypatch.setenv("CARBONO_ANTIVIRUS", "desativado")  # o antivírus tem testes próprios
     monkeypatch.setenv("CARBONO_ANEXOS", str(tmp_path / "anexos"))
     banco = str(tmp_path / "prod.db")
     app = criar_app(banco)
@@ -41,6 +42,15 @@ def test_producao_exige_segredo(tmp_path, monkeypatch):
     monkeypatch.setenv("CARBONO_MODO", "producao")
     monkeypatch.delenv("CARBONO_SEGREDO", raising=False)
     with pytest.raises(RuntimeError, match="CARBONO_SEGREDO"):
+        criar_app(str(tmp_path / "x.db"))
+
+
+def test_producao_exige_antivirus(tmp_path, monkeypatch):
+    monkeypatch.setenv("CARBONO_MODO", "producao")
+    monkeypatch.setenv("CARBONO_SEGREDO", SEGREDO)
+    monkeypatch.delenv("CARBONO_CLAMAV", raising=False)
+    monkeypatch.delenv("CARBONO_ANTIVIRUS", raising=False)
+    with pytest.raises(RuntimeError, match="CARBONO_CLAMAV"):
         criar_app(str(tmp_path / "x.db"))
 
 

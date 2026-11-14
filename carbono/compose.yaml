@@ -5,10 +5,31 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    environment:
+      CARBONO_CLAMAV: clamav:3310
     ports:
       - "127.0.0.1:8000:8000"   # só local; o proxy TLS publica para fora
     volumes:
       - dados:/dados
       - ./backups:/backups
+    depends_on:
+      clamav:
+        condition: service_healthy
+
+  # Antivírus dos anexos. Baixa e atualiza as assinaturas sozinho (freshclam, a cada 2 h);
+  # precisa de saída para database.clamav.net. A primeira carga leva alguns minutos e ~1,5 GB de RAM.
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - assinaturas:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      start_period: 300s
+      retries: 5
+
 volumes:
   dados:
+  assinaturas:

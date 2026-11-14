@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 7
+VERSAO_ESQUEMA = 8
 VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
@@ -435,6 +435,15 @@ CREATE TABLE IF NOT EXISTS parceria (
     CHECK (assinatura = 'minuta' OR assinatura_ref IS NOT NULL)
 );
 
+-- ---------------------------------------------------------------- antivírus (versão 8)
+-- Anexo detectado na revarredura (assinaturas novas): fica bloqueado para download.
+CREATE TABLE IF NOT EXISTS anexo_alerta (
+    id              INTEGER PRIMARY KEY,
+    anexo_sha256    TEXT NOT NULL UNIQUE,
+    ameaca          TEXT NOT NULL,
+    detectado_em    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 -- ---------------------------------------------------------------- faturas de energia (versão 7)
 CREATE UNIQUE INDEX IF NOT EXISTS ux_instalacao_uc ON instalacao(organizacao_id, uc_energia) WHERE uc_energia IS NOT NULL;
 
@@ -524,7 +533,7 @@ def _migrar_6_para_7(con: sqlite3.Connection) -> None:
 
 # Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
 # próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
-MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7}
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None}
 
 
 def migrar(con: sqlite3.Connection, caminho: str = "") -> int:

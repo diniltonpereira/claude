@@ -403,7 +403,7 @@ async function sincronizar(manual = false) {
       if (item.status === "erro" && !manual) continue;
       try { await enviarItem(item); await Fila.remover(item.chave); enviados++; }
       catch (e) {
-        if (e instanceof SemConexao || e.status === 401) break;
+        if (e instanceof SemConexao || e.status === 401 || e.status >= 500) break;  // transitório: tenta depois
         await Fila.atualizar({ ...item, status: "erro", erro: e.message }); falhas++;
       }
     }

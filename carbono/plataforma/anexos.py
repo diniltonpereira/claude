@@ -12,6 +12,7 @@ import os
 import sqlite3
 from pathlib import Path
 
+from . import antivirus
 from .auditoria import registrar
 from .banco import ErroNegocio, NaoAutorizado, buscar
 
@@ -45,10 +46,21 @@ def salvar(con: sqlite3.Connection, usuario_id: int, nome: str, tipo_mime: str, 
     if assinatura and not conteudo.startswith(assinatura):
         raise ErroNegocio("O conteúdo do arquivo não corresponde ao tipo informado.")
     sha = hashlib.sha256(conteudo).hexdigest()
+    nome_limpo = Path(nome).name[:200] or "anexo"
+    try:
+        antivirus.verificar_conteudo(tipo_mime, conteudo)
+        if antivirus.obrigatorio() and antivirus.alvo():
+            ameaca = antivirus.examinar(conteudo)
+            if ameaca:
+                raise antivirus.ArquivoRecusado(
+                    f"Arquivo bloqueado pelo antivírus ({ameaca}). Ele não foi gravado.", f"virus:{ameaca}")
+    except antivirus.ArquivoRecusado as exc:
+        registrar(con, usuario_id, "anexo_recusado", "anexo", None,
+                  depois={"sha256": sha, "nome": nome_limpo, "motivo": exc.motivo})
+        raise
     destino = diretorio() / sha
     if not destino.exists():
         destino.write_bytes(conteudo)
-    nome_limpo = Path(nome).name[:200] or "anexo"
     aid = con.execute(
         """INSERT INTO anexo (organizacao_id, sha256, nome_original, tipo_mime, tamanho, enviado_por)
            VALUES (?,?,?,?,?,?)""",
@@ -77,8 +89,30 @@ def exigir_acesso(con: sqlite3.Connection, usuario_id: int, anexo_id: int) -> sq
 
 def abrir(con: sqlite3.Connection, usuario_id: int, anexo_id: int) -> tuple[sqlite3.Row, bytes]:
     a = exigir_acesso(con, usuario_id, anexo_id)
+    alerta = con.execute("SELECT ameaca FROM anexo_alerta WHERE anexo_sha256=?", (a["sha256"],)).fetchone()
+    if alerta:
+        raise ErroNegocio(f"Arquivo bloqueado: o antivírus detectou {alerta['ameaca']} na revarredura. "
+                          "Procure a administração.")
     caminho = diretorio() / a["sha256"]
     conteudo = caminho.read_bytes()
     if hashlib.sha256(conteudo).hexdigest() != a["sha256"]:
         raise ErroNegocio("O arquivo armazenado não confere com o hash registrado: possível adulteração.")
     return a, conteudo
+
+
+def varrer(con: sqlite3.Connection) -> dict:
+    """Reexamina todos os arquivos guardados com as assinaturas atuais do antivírus."""
+    examinados, detectados = 0, []
+    for sha, in con.execute("SELECT DISTINCT sha256 FROM anexo").fetchall():
+        caminho = diretorio() / sha
+        if not caminho.exists():
+            continue
+        examinados += 1
+        ameaca = antivirus.examinar(caminho.read_bytes())
+        if ameaca:
+            novo = con.execute("INSERT OR IGNORE INTO anexo_alerta (anexo_sha256, ameaca) VALUES (?,?)",
+                               (sha, ameaca)).rowcount
+            if novo:
+                registrar(con, None, "anexo_bloqueado", "anexo", None, depois={"sha256": sha, "ameaca": ameaca})
+            detectados.append({"sha256": sha, "ameaca": ameaca})
+    return {"examinados": examinados, "detectados": detectados}

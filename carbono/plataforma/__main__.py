@@ -6,6 +6,7 @@
     python -m plataforma backup   --destino DIR [--banco carbono.db] [--anexos anexos]
     python -m plataforma restaurar ARQUIVO.db [--banco carbono.db] [--anexos anexos]
     python -m plataforma migrar   [--banco carbono.db]                          atualiza o esquema do banco
+    python -m plataforma varrer-anexos [--banco carbono.db]                     reexamina anexos no antivírus (1x/dia)
     python -m plataforma demo     [--banco demo.db]                             dados fictícios (modo demonstração)
 
 Variáveis de ambiente: ver .env.example e docs/IMPLANTACAO.md.
@@ -39,6 +40,7 @@ def main() -> None:
     rs = sub.add_parser("restaurar"); rs.add_argument("arquivo")
     rs.add_argument("--banco", default=banco_padrao); rs.add_argument("--anexos", default=anexos_padrao)
     m = sub.add_parser("migrar"); m.add_argument("--banco", default=banco_padrao)
+    v = sub.add_parser("varrer-anexos"); v.add_argument("--banco", default=banco_padrao)
     args = p.parse_args()
 
     if args.cmd == "criar-admin":
@@ -61,6 +63,9 @@ def main() -> None:
     elif args.cmd == "restaurar":
         from .operacao import restaurar
         print(json.dumps(restaurar(args.arquivo, args.banco, args.anexos), ensure_ascii=False))
+    elif args.cmd == "varrer-anexos":
+        from .anexos import varrer
+        print(json.dumps(varrer(conectar(args.banco)), ensure_ascii=False))
     elif args.cmd == "migrar":
         conectar(args.banco).close()
         print(f"Banco na versão {VERSAO_ESQUEMA} do esquema.")

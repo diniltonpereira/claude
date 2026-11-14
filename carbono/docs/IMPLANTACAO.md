@@ -81,6 +81,7 @@ O cookie de sessão é `Secure`: em produção, o acesso **tem** de ser por HTTP
 | Rotina | Comando | Frequência |
 | --- | --- | --- |
 | Lembretes, alertas e score das terceirizadas | `docker compose exec carbonmg python -m plataforma rotina-diaria` | diária (cron do servidor) |
+| Revarredura dos anexos com as assinaturas do dia | `docker compose exec carbonmg python -m plataforma varrer-anexos` | diária, depois da atualização do ClamAV |
 | Backup | `docker compose exec carbonmg python -m plataforma backup --destino /backups` | diária; copie a pasta `backups/` para outro local em região BR |
 | Teste de restauração | ver 4.1 | mensal |
 | Atualização de versão | `git pull && docker compose build && docker compose up -d` | as migrações do banco rodam sozinhas ao iniciar |
@@ -109,13 +110,29 @@ O banco anterior fica salvo com o sufixo `.antes-da-restauracao`.
 | Cabeçalhos | CSP restrita (sem script embutido), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, HSTS |
 | Contêiner | usuário sem privilégios (uid 10001), healthcheck, porta publicada só em 127.0.0.1 |
 | Logs | JSON por requisição (método, caminho, status, tempo), sem parâmetros nem dados pessoais |
-| Anexos | tipo e assinatura do arquivo conferidos, até 10 MB, guardados pelo SHA-256 e verificados ao baixar |
+| Anexos | tipo e assinatura do arquivo conferidos, até 10 MB, antivírus e conteúdo ativo (seção 5.1), guardados pelo SHA-256 e verificados ao baixar |
 
 **Pendentes recomendados:**
-- antivírus no upload (ClamAV);
 - WAF no proxy;
 - monitoramento externo de `/saude`;
 - armazenamento de anexos em S3 compatível com criptografia, se o volume crescer.
+
+### 5.1 Antivírus e conteúdo ativo nos anexos
+
+- **ClamAV:** o `compose.yaml` sobe o serviço `clamav` (imagem oficial `clamav/clamav:1.4`), que atualiza as assinaturas sozinho a cada 2 horas. O servidor precisa de saída para `database.clamav.net`. A primeira carga das assinaturas leva alguns minutos e usa cerca de 1,5 GB de RAM; o `carbonmg` só sobe quando o antivírus está pronto.
+- **Exame antes de gravar:** cada arquivo vai ao `clamd` pela rede interna do Docker, antes de ser salvo. Arquivo infectado é recusado (HTTP 409), não é gravado e a tentativa fica na trilha de auditoria (`anexo_recusado`, com o nome da ameaça e o SHA-256).
+- **Falha fechada:** em produção, sem `CARBONO_CLAMAV` a aplicação não sobe; se o antivírus cair, os envios são recusados com HTTP 503 ("tente de novo em alguns minutos") e o `/saude` responde `degradado` (503), o que aciona o monitoramento. Só `CARBONO_ANTIVIRUS=desativado` dispensa o exame; registre essa decisão.
+- **Conteúdo ativo é recusado mesmo sem vírus conhecido** (faturas, notas e certidões não precisam dele):
+  - PDF com JavaScript, ação que abre programas, arquivo embutido, mídia, formulário XFA ou envio de formulário, inclusive com nomes escapados (`/J#61vaScript`);
+  - planilha com macro ou ActiveX, ou que se expande demais ao abrir (bomba de compressão);
+  - imagem corrompida ou com dimensões absurdas; CSV com conteúdo binário.
+  
+  Quem recebe a recusa deve gerar o documento de novo com "imprimir como PDF" ou salvar a planilha como `.xlsx` sem macros.
+- **Revarredura diária:** `varrer-anexos` reexamina todos os arquivos guardados com as assinaturas do dia. O que for detectado fica **bloqueado para download** (`anexo_bloqueado` na trilha), sem apagar o registro: o comprovante continua citado no inventário, e a administração decide o que fazer. Para retirar um bloqueio indevido (falso positivo), apague a linha em `anexo_alerta` e registre o motivo.
+- **Teste:** o arquivo de teste EICAR é detectado como `Eicar-Test-Signature` puro ou dentro de um ZIP/XLSX. Colado no meio de um PDF falso, o ClamAV não o acusa (o EICAR só vale no início do arquivo); isso é o comportamento normal do padrão, não falha da integração. Para conferir na instalação:
+  ```bash
+  CARBONO_CLAMAV_REAL=127.0.0.1:3310 python -m pytest tests/test_antivirus.py -k real
+  ```
 
 ## 6. LGPD: checklist do órgão
 - [ ] Definir controlador e encarregado (`CARBONO_CONTROLADOR`, `CARBONO_ENCARREGADO`): aparecem na política e no aceite.
