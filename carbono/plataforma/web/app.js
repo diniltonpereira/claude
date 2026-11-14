@@ -599,6 +599,8 @@ async function telaInventario(id) {
       <div class="acoes" style="margin-top:1rem">
         <button class="botao secundario" id="b-rel">Relatório para impressão (PDF)</button>
         <button class="botao secundario" id="b-xlsx">Planilha (Excel)</button>
+        <button class="botao secundario" id="b-docx">Relatório editável (Word)</button>
+        ${inv.status === "aprovado" ? `<button class="botao secundario" id="b-etp">ETP da compensação (Word)</button>` : ""}
         ${editavel ? `<button class="botao secundario" id="b-import">Importar emissões das terceirizadas</button>` : ""}
       </div></section>
     <div class="colunas">
@@ -655,6 +657,9 @@ function ligarAcoesInventario(inv) {
   }
   $("#b-rel").onclick = () => abrirRelatorio(`/inventarios/${id}/relatorio.html`).catch((e) => avisar(e.message, true));
   $("#b-xlsx").onclick = () => baixar(`/inventarios/${id}/relatorio.xlsx`, `inventario-${inv.ano}.xlsx`).catch((e) => avisar(e.message, true));
+  $("#b-docx").onclick = () => baixar(`/inventarios/${id}/relatorio.docx`, `relatorio-emissoes-${inv.ano}.docx`).catch((e) => avisar(e.message, true));
+  const be = $("#b-etp");
+  if (be) be.onclick = () => baixar(`/inventarios/${id}/etp-compensacao.docx`, `etp-compensacao-${inv.ano}.docx`).catch((e) => avisar(e.message, true));
   const imp = $("#b-import");
   if (imp) imp.onclick = async () => {
     try {
@@ -1305,12 +1310,14 @@ async function telaPedido(id) {
       <tr><td>Taxa da plataforma (${t(p.taxa_percentual)}%)</td><td class="num">${brl(p.valor_taxa)}</td></tr>
       <tr><td><strong>Total</strong></td><td class="num"><strong>${brl(p.valor_total)}</strong></td></tr></tbody></table>
       <div class="acoes" style="margin-top:1rem"><button type="button" class="botao secundario" id="b-tr">Minuta de TR e justificativa de preço</button>
+        <button type="button" class="botao secundario" id="b-tr-docx">Termo de Referência (Word)</button>
         ${p.status === "pago" && p.inventario_id && doOrgao ? `<a class="botao" href="#/inventarios/${p.inventario_id}">Compensar no inventário</a>` : ""}</div></section>
     <section class="bloco"><h2>Próxima etapa</h2>${acao || `<p class="vazio">${p.status === "pago" ? "Despesa concluída." : p.status === "cancelado" ? "Pedido encerrado." : "Aguardando outra parte."}</p>`}
       ${cancelavel ? `<form id="f-canc" class="grade" style="margin-top:1rem"><label class="largo">Motivo do cancelamento${p.status === "empenhado" ? ` <span class="ajuda">Anule também o empenho no sistema financeiro.</span>` : ""}<input name="motivo" required></label>
         <div class="acoes largo"><button type="submit" class="botao perigo">Cancelar pedido</button></div><p class="erro-campo largo"></p></form>` : ""}</section></div>`;
   const recarregar = () => telaPedido(id);
   $("#b-tr").onclick = () => abrirRelatorio(`/pedidos/${id}/minuta-tr.html`).catch((e) => avisar(e.message, true));
+  $("#b-tr-docx").onclick = () => baixar(`/pedidos/${id}/tr.docx`, `termo-de-referencia-pedido-${id}.docx`).catch((e) => avisar(e.message, true));
   aoEnviar($("#f-instr"), async (d) => { await api("POST", `/pedidos/${id}/instrucao`, d); avisar("Instrução registrada."); recarregar(); });
   aoEnviar($("#f-emp"), async (d) => { await api("POST", `/pedidos/${id}/empenho`, d); avisar("Empenho registrado."); recarregar(); });
   aoEnviar($("#f-liq"), async (d) => { await api("POST", `/pedidos/${id}/liquidacao`, d); avisar("Liquidação atestada."); recarregar(); });

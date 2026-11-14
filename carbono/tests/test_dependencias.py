@@ -7,7 +7,7 @@ import pathlib
 import sys
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
-NOME_NO_PIP = {"PIL": "pillow", "shapefile": "pyshp", "multipart": "python-multipart", "jwt": "pyjwt"}
+NOME_NO_PIP = {"PIL": "pillow", "shapefile": "pyshp", "multipart": "python-multipart", "jwt": "pyjwt", "docx": "python-docx"}
 
 
 def test_requirements_cobre_os_imports():

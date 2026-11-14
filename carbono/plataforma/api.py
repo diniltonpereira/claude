@@ -24,7 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (acesso, anexos, antivirus, assinatura, auditoria, compensacao, envio, faturas, geo, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+from . import (acesso, anexos, antivirus, assinatura, auditoria, compensacao, envio, faturas, geo, modelos, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
                terceirizadas)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar, transacao
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
@@ -1047,6 +1047,21 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
         _inv_visivel(c, u, iid)
         return HTMLResponse(relatorio.html_relatorio(c, iid, _base_publica(request)))
 
+    def _docx(conteudo: bytes, nome: str) -> Response:
+        return Response(conteudo, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+    @app.get("/inventarios/{iid}/relatorio.docx")
+    def rel_docx(iid: int, u=Depends(usuario), c=Depends(db)):
+        inv = _inv_visivel(c, u, iid)
+        return _docx(modelos.relatorio_inventario(c, iid), f"relatorio-emissoes-{inv['ano']}.docx")
+
+    @app.get("/inventarios/{iid}/etp-compensacao.docx")
+    def etp_docx(iid: int, u=Depends(usuario), c=Depends(db)):
+        """Estudo Técnico Preliminar da compra de créditos (art. 18, § 1º)."""
+        inv = _inv_visivel(c, u, iid)
+        return _docx(modelos.etp_compensacao(c, iid), f"etp-compensacao-{inv['ano']}.docx")
+
     @app.get("/inventarios/{iid}/relatorio.xlsx")
     def rel_xlsx(iid: int, u=Depends(usuario), c=Depends(db)):
         inv = _inv_visivel(c, u, iid)
@@ -1186,6 +1201,11 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     @app.get("/pedidos/{pid}")
     def ver_pedido(pid: int, u=Depends(usuario), c=Depends(db)):
         return marketplace.ver_pedido(c, u["id"], pid)
+
+    @app.get("/pedidos/{pid}/tr.docx")
+    def tr_docx(pid: int, u=Depends(usuario), c=Depends(db)):
+        """Termo de Referência editável (art. 6º, XXIII)."""
+        return _docx(modelos.tr_pedido(c, u["id"], pid), f"termo-de-referencia-pedido-{pid}.docx")
 
     @app.get("/pedidos/{pid}/minuta-tr.html", response_class=HTMLResponse)
     def minuta(pid: int, u=Depends(usuario), c=Depends(db)):

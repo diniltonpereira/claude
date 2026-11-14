@@ -255,3 +255,15 @@ Assinatura eletrônica **avançada** (Lei 14.063/2020, art. 4º, II), gratuita, 
   - assinatura embutida no próprio PDF (PAdES);
   - assinatura qualificada ICP-Brasil (escopo `icp_brasil` da mesma API);
   - um provedor privado (como a Clicksign) para partes que não tenham conta gov.br prata ou ouro.
+
+## 13. Modelos editáveis em Word
+
+| Documento | Onde | Base |
+| --- | --- | --- |
+| Estudo Técnico Preliminar da compra de créditos | página do inventário aprovado, "ETP da compensação (Word)" | Lei 14.133/2021, art. 18, § 1º; traz os incisos I, IV, VI, VIII e XIII, que o § 2º torna obrigatórios |
+| Termo de Referência | página do pedido, "Termo de Referência (Word)" | Lei 14.133/2021, art. 6º, XXIII, alíneas "a" a "j" |
+| Relatório de emissões | página do inventário, "Relatório editável (Word)" | GHG Protocol e ABNT NBR ISO 14064-1, com o enquadramento no SBCE |
+
+- **Números da plataforma:** emissões por escopo, quantidade a compensar (escopos 1 e 2, menos o que já foi compensado), pesquisa de preços do catálogo por categoria, fatores com versão e fonte, trilha de verificação e aprovação.
+- **Campos em amarelo `[PREENCHER: …]`:** o que só a área demandante sabe (processo, plano de contratações anual, dotação, fiscal, outras fontes de preço, conclusão).
+- **São minutas:** o ETP e o TR trazem o aviso de controle prévio de legalidade (art. 53). O TR é neutro: não exige compra por esta plataforma nem cita fornecedores. Os textos foram escritos a partir da estrutura dos artigos; **confira a redação vigente da lei** antes de usar.

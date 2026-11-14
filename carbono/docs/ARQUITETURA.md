@@ -40,6 +40,7 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | `terceirizadas.py` | Contratos, lançamentos, situação mensal, score, selo, notificações, rotina diária, importação para o escopo 3 |
 | `registro.py` | Lotes de créditos, transferência, cancelamento, livro-razão encadeado, certificado por hash |
 | `compensacao.py` | Plano e execução da compensação voluntária e da conciliação SBCE |
+| `modelos.py` | Modelos editáveis em Word (.docx): ETP da compensação (art. 18, § 1º), Termo de Referência (art. 6º, XXIII) e relatório de emissões, com campos a preencher destacados |
 | `relatorio.py` | Relatório HTML para impressão em PDF e planilha XLSX |
 | `projetos.py` | Projetos de geração: cadastro, funil com checklist e evidência, parceria, travas dos arts. 43, 47 e 49 |
 | `acesso.py` | Sessões (cookie e hash), CSRF, senha scrypt, TOTP, bloqueio, convites, gov.br (OIDC com PKCE, id_token conferido pela chave publicada, nível da conta, logout no Login Único), termos e direitos LGPD |
