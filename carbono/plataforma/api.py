@@ -6,12 +6,14 @@ Autenticação do MVP: cabeçalho `X-Usuario-Id`. Em produção, troque por logi
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import sqlite3
 from datetime import date
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import compensacao, mrv, registro
@@ -204,6 +206,37 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
             raise ErroNegocio(f"Organização inválida ou CNPJ já cadastrado: {exc}") from exc
         return {"id": oid, "conta_id": registro.abrir_conta(c, oid)}
 
+    @app.get("/eu")
+    def eu(u=Depends(usuario), c=Depends(db)):
+        """Usuário atual, sua organização e sua conta no registro."""
+        org, conta = None, None
+        if u["organizacao_id"]:
+            org = dict(buscar(c, "organizacao", u["organizacao_id"]))
+            r = c.execute("SELECT id FROM conta WHERE organizacao_id=?", (org["id"],)).fetchone()
+            conta = r["id"] if r else None
+        return {"usuario": dict(u), "organizacao": org, "conta_id": conta}
+
+    @app.get("/organizacoes")
+    def listar_orgs(u=Depends(usuario), c=Depends(db)):
+        sql = """SELECT o.*, ct.id AS conta_id FROM organizacao o
+                 LEFT JOIN conta ct ON ct.organizacao_id = o.id"""
+        if u["papel"] == "registrador":
+            return [dict(r) for r in c.execute(sql + " ORDER BY o.nome")]
+        return [dict(r) for r in c.execute(sql + " WHERE o.id=?", (u["organizacao_id"],))]
+
+    @app.get("/contas")
+    def listar_contas(_=Depends(usuario), c=Depends(db)):
+        """Contas do registro (destino de transferências). Não expõe saldos."""
+        return [dict(r) for r in c.execute(
+            """SELECT ct.id AS conta_id, o.nome, o.tipo FROM conta ct
+               JOIN organizacao o ON o.id = ct.organizacao_id ORDER BY o.nome""")]
+
+    @app.get("/usuarios")
+    def listar_usuarios(_=Depends(registrador), c=Depends(db)):
+        return [dict(r) for r in c.execute(
+            """SELECT u.*, o.nome AS organizacao FROM usuario u
+               LEFT JOIN organizacao o ON o.id = u.organizacao_id ORDER BY u.id""")]
+
     @app.post("/usuarios", status_code=201)
     def criar_usuario(d: UsuarioIn, _=Depends(registrador), c=Depends(db)):
         if d.organizacao_id is not None:
@@ -233,6 +266,22 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
             return
         if u["organizacao_id"] != inv["organizacao_id"]:
             raise NaoAutorizado("Inventário de outra organização.")
+
+    @app.get("/inventarios")
+    def listar_inv(u=Depends(usuario), c=Depends(db)):
+        """Fila de trabalho conforme o papel do usuário."""
+        base = """SELECT i.*, o.nome AS organizacao, o.tipo AS tipo_organizacao,
+                    COALESCE((SELECT SUM(tco2e) FROM atividade a WHERE a.inventario_id=i.id
+                              AND a.natureza='emissao'),0) AS total_tco2e
+                 FROM inventario i JOIN organizacao o ON o.id = i.organizacao_id"""
+        filtros = {
+            "elaborador": (" WHERE i.organizacao_id=?", (u["organizacao_id"],)),
+            "verificador": (" WHERE i.status='submetido' OR i.verificado_por=?", (u["id"],)),
+            "moderador": (" WHERE i.status='verificado' OR i.moderado_por=?", (u["id"],)),
+            "registrador": ("", ()),
+        }
+        onde, args = filtros[u["papel"]]
+        return [dict(r) for r in c.execute(base + onde + " ORDER BY i.ano DESC, i.id DESC", args)]
 
     @app.get("/inventarios/{iid}")
     def ver_inv(iid: int, u=Depends(usuario), c=Depends(db)):
@@ -305,5 +354,12 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
         return [dict(r) for r in c.execute(
             """SELECT serial, tipo_ativo, projeto, safra, quantidade, finalidade, beneficiario
                FROM lote WHERE status = 'cancelado' ORDER BY id""")]
+
+    painel = Path(__file__).parent / "web"
+    app.mount("/painel", StaticFiles(directory=painel, html=True), name="painel")
+
+    @app.get("/", include_in_schema=False)
+    def inicio():
+        return RedirectResponse("/painel/")
 
     return app

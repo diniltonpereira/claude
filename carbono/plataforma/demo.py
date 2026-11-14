@@ -43,7 +43,7 @@ def executar(banco: str = "demo.db") -> dict:
                                 evidencia="NF/fatura no processo SEI 0001/2026")
     mrv.adicionar_atividade(c, elab, inv, descricao="Recarga de ar-condicionado", gas="HFC-134a",
                             quantidade=0.12, evidencia="Ordem de serviço 77/2025")
-    mrv.adicionar_atividade(c, elab, inv, descricao="Restauração do Parque Municipal (remoção)",
+    mrv.adicionar_atividade(c, elab, inv, descricao="Restauração do Parque Municipal",
                             gas="CO2", quantidade=40, remocao=True, evidencia="Laudo de biomassa 3/2025")
 
     # Moderação: verificação independente + aprovação pela controladoria.

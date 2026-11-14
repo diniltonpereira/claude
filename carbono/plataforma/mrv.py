@@ -204,4 +204,6 @@ def _checar_segregacao(con, u, inv, acao) -> None:
 
 def historico(con: sqlite3.Connection, inventario_id: int) -> list[dict]:
     return [dict(r) for r in con.execute(
-        "SELECT * FROM evento_mrv WHERE inventario_id=? ORDER BY id", (inventario_id,))]
+        """SELECT e.*, u.nome AS usuario_nome, u.papel AS usuario_papel FROM evento_mrv e
+           JOIN usuario u ON u.id = e.usuario_id WHERE e.inventario_id=? ORDER BY e.id""",
+        (inventario_id,))]

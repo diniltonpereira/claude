@@ -33,15 +33,29 @@ Plataforma para **órgãos públicos, PPPs e concessões** inventariarem emissõ
 - **Idempotência:** operações reenviadas com a mesma `chave_idempotencia` não se repetem.
 - **Acesso:** cada usuário só lê e movimenta dados da própria organização (testado contra IDOR).
 
+## Painel web
+
+A própria aplicação serve um painel em `http://127.0.0.1:8000/painel/` (a raiz redireciona para ele). O menu muda conforme o papel do usuário:
+
+| Papel | O que faz no painel |
+| --- | --- |
+| Elaboração | Cadastra instalações e fontes, cria o inventário, lança atividades com evidência, submete, vê o enquadramento com os fundamentos legais e compensa (com confirmação antes de cancelar) |
+| Verificação (organismo acreditado) | Assume inventários da fila, conclui ou devolve com parecer |
+| Moderação | Aprova ou devolve inventários verificados |
+| Registro | Cadastra organizações e usuários e escritura lotes emitidos |
+| Público, sem login | Transparência: créditos cancelados e integridade do livro-razão |
+
+A trilha do inventário mostra cada etapa carimbada com quem agiu e quando. Para experimentar: `python -m plataforma demo --banco demo.db` e depois `python -m plataforma servir --banco demo.db`. Usuários da demonstração: 1 registro, 2 elaboração (prefeitura), 3 verificação, 4 moderação, 6 elaboração (concessionária).
+
 ## Como rodar
 
 ```bash
 cd carbono
 pip install -r requirements.txt
-python -m pytest -q                      # 51 testes
+python -m pytest -q                      # 51 testes (inclui o painel)
 python -m plataforma demo                # ciclo completo com dados fictícios
 python -m plataforma iniciar             # cria o banco e o 1º registrador
-python -m plataforma servir --porta 8000 # API em http://127.0.0.1:8000/docs
+python -m plataforma servir --porta 8000 # painel em /painel/, API em /docs
 ```
 
 Na API, identifique o usuário pelo cabeçalho `X-Usuario-Id` (somente no MVP).

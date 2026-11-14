@@ -435,3 +435,9 @@ def test_api_fluxo_e_controle_de_acesso(tmp_path):
     enq = cli.post(f"/inventarios/{inv}/enquadramento", headers=H(e1), json={}).json()
     assert enq["faixa_sbce"] == "nao_regulado" and any("preliminar" in a for a in enq["alertas"])
     assert cli.get("/registro/auditoria").json()["integra"] is True
+    # Painel web servido pela própria aplicação; listagens respeitam o papel.
+    assert "Carbono Público" in cli.get("/painel/").text
+    assert cli.get("/", follow_redirects=False).headers["location"] == "/painel/"
+    assert cli.get("/eu", headers=H(e1)).json()["organizacao"]["id"] == o1["id"]
+    assert [i["id"] for i in cli.get("/inventarios", headers=H(e2)).json()] == []
+    assert cli.get("/usuarios", headers=H(e1)).status_code == 403
