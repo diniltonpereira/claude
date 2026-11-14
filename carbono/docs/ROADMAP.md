@@ -1,6 +1,6 @@
 # Roteiro: especificação CarbonMG × plataforma atual
 
-Este documento registra o que foi aproveitado da especificação "Prompt mestre CarbonMG", o que foi ajustado por razão jurídica e o que falta.
+A plataforma nasceu com o nome provisório CarbonMG e passou a se chamar **Lastro Carbono**. Este documento registra o que foi aproveitado da especificação "Prompt mestre CarbonMG", o que foi ajustado por razão jurídica e o que falta.
 
 ## 1. Já implementado (versões 0.2 e 0.3)
 

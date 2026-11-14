@@ -2,7 +2,7 @@
 /* Fila de envio do aparelho (IndexedDB): lançamentos feitos sem conexão, com o comprovante.
  * Cada item é do usuário que o criou e leva uma chave de idempotência: reenviar não duplica. */
 const Fila = (() => {
-  const BANCO = "carbonmg", LOJA = "fila";
+  const BANCO = "lastro", LOJA = "fila";
   let conexao;
 
   function abrir() {

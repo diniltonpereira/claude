@@ -93,7 +93,7 @@ def _despachante_de_emails(banco: str) -> None:
     if os.environ.get("CARBONO_ENVIO_AUTOMATICO", "1") == "0":
         return
     if not configurado():
-        logging.getLogger("carbonmg").warning(json.dumps(
+        logging.getLogger("lastro").warning(json.dumps(
             {"evento": "email_nao_configurado", "detalhe": "defina CARBONO_SMTP_HOST e CARBONO_SMTP_REMETENTE"}))
         return
 
@@ -103,9 +103,9 @@ def _despachante_de_emails(banco: str) -> None:
             try:
                 r = despachar(con)
                 if r["enviados"] or r["falhas"] or r["adiados"]:
-                    logging.getLogger("carbonmg").info(json.dumps({"evento": "emails", **r}))
+                    logging.getLogger("lastro").info(json.dumps({"evento": "emails", **r}))
             except Exception:  # noqa: BLE001 — o laço não pode morrer
-                logging.getLogger("carbonmg").exception("falha no despacho de e-mails")
+                logging.getLogger("lastro").exception("falha no despacho de e-mails")
             time.sleep(60)
 
     threading.Thread(target=laco, name="emails", daemon=True).start()

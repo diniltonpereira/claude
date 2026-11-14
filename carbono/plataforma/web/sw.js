@@ -1,4 +1,4 @@
-/* Service worker do CarbonMG: abre o painel sem conexão e guarda as consultas usadas em campo.
+/* Service worker do Lastro Carbono: abre o painel sem conexão e guarda as consultas usadas em campo.
  *
  * - Telas do app (HTML, CSS, JS, ícones): cache primeiro, atualizado em segundo plano.
  * - Consultas de leitura usadas em campo (inventários, contratos, unidades, fatores, sessão): rede
@@ -8,9 +8,9 @@
  * - Ao sair da conta, o app apaga o cache de consultas (LIMPAR_DADOS).
  */
 "use strict";
-const VERSAO = "carbonmg-v13";
+const VERSAO = "lastro-v14";
 const CACHE_APP = `${VERSAO}-app`;
-const CACHE_API = "carbonmg-api";
+const CACHE_API = "lastro-api";
 const APP = ["./", "index.html", "app.css", "app.js", "offline.js", "mapa.js", "manifest.webmanifest",
   "icone-192.png", "icone-512.png", "icone-maskable-512.png", "vendor/leaflet/leaflet.js", "vendor/leaflet/leaflet.css"];
 const LEITURA_OFFLINE = [
@@ -25,7 +25,7 @@ self.addEventListener("install", (ev) => {
 
 self.addEventListener("activate", (ev) => {
   ev.waitUntil(caches.keys()
-    .then((ks) => Promise.all(ks.filter((k) => k.startsWith("carbonmg-v") && k !== CACHE_APP).map((k) => caches.delete(k))))
+    .then((ks) => Promise.all(ks.filter((k) => (k.startsWith("lastro-v") && k !== CACHE_APP) || k.startsWith("carbonmg-")).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
@@ -35,7 +35,7 @@ self.addEventListener("message", (ev) => {
 
 function semConexao() {
   return new Response(JSON.stringify({ erro: "Sem conexão. Esta informação ainda não foi aberta neste aparelho." }),
-    { status: 503, headers: { "Content-Type": "application/json", "X-CarbonMG-Offline": "1" } });
+    { status: 503, headers: { "Content-Type": "application/json", "X-Lastro-Offline": "1" } });
 }
 
 self.addEventListener("fetch", (ev) => {

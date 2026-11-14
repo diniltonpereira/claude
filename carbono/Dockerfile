@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# CarbonMG — imagem de produção
+# Lastro Carbono — imagem de produção
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
@@ -14,11 +14,11 @@ COPY requirements.txt .
 RUN --mount=type=secret,id=ca,required=false \
     if [ -f /run/secrets/ca ]; then export PIP_CERT=/run/secrets/ca; fi; \
     pip install --no-cache-dir -r requirements.txt \
- && useradd --system --uid 10001 --home /app carbonmg \
- && mkdir -p /dados /backups && chown carbonmg /dados /backups
+ && useradd --system --uid 10001 --home /app lastro \
+ && mkdir -p /dados /backups && chown lastro /dados /backups
 
 COPY plataforma ./plataforma
-USER carbonmg
+USER lastro
 VOLUME ["/dados", "/backups"]
 EXPOSE 8000
 

@@ -1,4 +1,4 @@
-# CarbonMG: inventário, terceirizadas e compensação de carbono para o setor público
+# Lastro Carbono: inventário, terceirizadas e compensação de carbono para o setor público
 
 Plataforma para órgãos públicos, PPPs e concessões, com foco inicial em Minas Gerais. Ela permite:
 
@@ -65,7 +65,7 @@ python -m plataforma rotina-diaria --banco carbono.db     # cron: 1 vez por dia
 | `ITI_CLIENT_ID`, `ITI_CLIENT_SECRET`, `ITI_REDIRECT_URI` | — | Assinatura eletrônica avançada gov.br dos contratos de parceria (credencial do órgão junto ao ITI) |
 | `PNCP_URL` | `https://pncp.gov.br/api` | APIs públicas do PNCP: vínculo do pedido à contratação divulgada e pesquisa de preços |
 | `CARBONO_URL_PUBLICA` | endereço da requisição | Endereço público usado nos QR Codes (obrigatório atrás de proxy) |
-| `PLATAFORMA_NOME` | `CarbonMG` | Nome exibido |
+| `PLATAFORMA_NOME` | `Lastro Carbono` | Nome exibido |
 | `CARBONO_TAXA_MARKETPLACE` | `10` | Taxa da plataforma (%) sobre compras de créditos, exibida em todas as etapas |
 
 ## O que a plataforma faz
@@ -87,7 +87,7 @@ python -m plataforma rotina-diaria --banco carbono.db     # cron: 1 vez por dia
 ## Documentação para o desenvolvedor
 
 - [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md): módulos, modelo de dados, papéis e permissões, regras que o banco garante, API e checklist de produção.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md): o que veio da especificação CarbonMG, o que foi ajustado por razão jurídica e o que falta.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): o que veio da especificação Lastro Carbono, o que foi ajustado por razão jurídica e o que falta.
 - [`docs/MARCO_LEGAL.md`](docs/MARCO_LEGAL.md): fundamentos legais.
 
 ## Produção
@@ -97,7 +97,7 @@ O modo produção é o padrão: login gov.br (servidores) ou e-mail, senha e ver
 ```bash
 cp .env.example .env          # preencha CARBONO_SEGREDO e os dados do órgão
 docker compose build
-docker compose run --rm carbonmg python -m plataforma criar-admin --email adm@orgao.mg.gov.br --nome "Administração"
+docker compose run --rm lastro python -m plataforma criar-admin --email adm@orgao.mg.gov.br --nome "Administração"
 docker compose up -d          # coloque um proxy com TLS na frente
 ```
 

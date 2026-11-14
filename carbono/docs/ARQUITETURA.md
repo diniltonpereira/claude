@@ -1,4 +1,4 @@
-# Arquitetura do CarbonMG
+# Arquitetura do Lastro Carbono
 
 Guia para quem vai manter e evoluir o sistema. Leia junto com `docs/MARCO_LEGAL.md`: várias regras do código existem por exigência legal e não devem ser "simplificadas".
 
@@ -114,7 +114,7 @@ organizacao ─┬─ usuario (papel)            fator_emissao (codigo, versao, 
 anexo (sha256, tipo, enviado_por)          auditoria (quem, quando, ip, acao, entidade, antes, depois)
 ```
 
-Correspondência com o modelo do prompt CarbonMG:
+Correspondência com o modelo do prompt Lastro Carbono:
 
 | Prompt | Aqui |
 | --- | --- |

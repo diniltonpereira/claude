@@ -20,9 +20,9 @@ CONTRATO = PDF + b"% contrato de parceria v1\n"
 @pytest.fixture
 def credenciais(monkeypatch):
     for k, v in {"CARBONO_SEGREDO": "x" * 40, "GOVBR_CLIENT_ID": "cid", "GOVBR_CLIENT_SECRET": "seg",
-                 "GOVBR_REDIRECT_URI": "https://carbonmg.exemplo/auth/govbr/retorno",
+                 "GOVBR_REDIRECT_URI": "https://lastro.exemplo/auth/govbr/retorno",
                  "ITI_CLIENT_ID": "iti-cid", "ITI_CLIENT_SECRET": "iti-seg",
-                 "ITI_REDIRECT_URI": "https://carbonmg.exemplo/assinaturas/iti/retorno"}.items():
+                 "ITI_REDIRECT_URI": "https://lastro.exemplo/assinaturas/iti/retorno"}.items():
         monkeypatch.setenv(k, v)
 
 

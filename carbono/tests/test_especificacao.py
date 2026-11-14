@@ -1,4 +1,4 @@
-"""Testes dos recursos incorporados da especificação CarbonMG."""
+"""Testes dos recursos incorporados da especificação Lastro Carbono."""
 import io
 import sqlite3
 from datetime import date

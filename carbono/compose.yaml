@@ -1,7 +1,7 @@
 # Uso: copie .env.example para .env, preencha e rode `docker compose up -d`.
 # Coloque um proxy reverso com TLS (Caddy, Nginx, balanceador do provedor) na frente da porta 8000.
 services:
-  carbonmg:
+  lastro:
     build: .
     restart: unless-stopped
     env_file: .env

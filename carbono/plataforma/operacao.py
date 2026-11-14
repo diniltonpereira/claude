@@ -47,7 +47,7 @@ def backup(banco: str, anexos: str, destino: str) -> dict:
     dest = Path(destino)
     (dest / "anexos").mkdir(parents=True, exist_ok=True)
     carimbo = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    arquivo = dest / f"carbonmg-{carimbo}.db"
+    arquivo = dest / f"lastro-{carimbo}.db"
     origem = sqlite3.connect(banco)
     copia = sqlite3.connect(arquivo)
     with copia:
@@ -66,7 +66,7 @@ def backup(banco: str, anexos: str, destino: str) -> dict:
                     novos += 1
     manifesto = {"banco": arquivo.name, "sha256": _sha_arquivo(arquivo), "criado_em": carimbo,
                  "anexos_total": total, "anexos_novos": novos}
-    (dest / f"carbonmg-{carimbo}.json").write_text(json.dumps(manifesto, indent=2))
+    (dest / f"lastro-{carimbo}.json").write_text(json.dumps(manifesto, indent=2))
     return manifesto
 
 

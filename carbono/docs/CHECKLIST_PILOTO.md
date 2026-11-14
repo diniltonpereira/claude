@@ -1,6 +1,6 @@
 # Checklist de lançamento do piloto
 
-50 itens em 7 fases, para colocar o CarbonMG no ar com uma prefeitura. Cada item indica o responsável e, quando há, a seção do `docs/IMPLANTACAO.md` com o passo a passo.
+50 itens em 7 fases, para colocar o Lastro Carbono no ar com uma prefeitura. Cada item indica o responsável e, quando há, a seção do `docs/IMPLANTACAO.md` com o passo a passo.
 
 **Caminho crítico:** as credenciais do gov.br e do ITI (fase 2) têm prazo e dependem do domínio oficial e da integração com o Login Único. Peça na semana 1.
 
@@ -19,7 +19,7 @@ Quem responde pelo piloto, qual é o escopo e como o órgão formaliza a adesão
 
 É o caminho crítico: os pedidos ao gov.br e ao ITI têm prazo e dependem uns dos outros.
 
-- [ ] **Reservar um subdomínio oficial de governo** — _TI_. Ex.: carbonmg.municipio.mg.gov.br. Sem domínio oficial não sai a credencial de produção da assinatura gov.br (Portaria SGD/MGI nº 7.076/2024, arts. 3º e 5º). (IMPLANTACAO §12)
+- [ ] **Reservar um subdomínio oficial de governo** — _TI_. Ex.: lastro.municipio.mg.gov.br. Sem domínio oficial não sai a credencial de produção da assinatura gov.br (Portaria SGD/MGI nº 7.076/2024, arts. 3º e 5º). (IMPLANTACAO §12)
 - [ ] **Gerar par de chaves PGP com data de validade** — _TI_. Usado para receber as credenciais do gov.br. Chave sem data de expiração não é aceita. (IMPLANTACAO §12)
 - [ ] **Pedir a credencial do Login Único (homologação)** — _Gestor público_. Pelo Serviço de Integração aos Produtos de Identidade Digital gov.br. URL de retorno /auth/govbr/retorno, URL de logout /painel/, escopos openid email profile govbr_confiabilidades_idtoken. (IMPLANTACAO §3)
 - [ ] **Pedir a credencial da API de assinatura (homologação)** — _Gestor público_. Só gestor público pode pedir. Sai em até 3 dias úteis. URL de retorno /assinaturas/iti/retorno. (IMPLANTACAO §12)

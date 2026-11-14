@@ -15,7 +15,7 @@ não deixa e-mail enviado.
 
 Configuração (SMTP do órgão ou serviço contratado):
     CARBONO_SMTP_HOST, CARBONO_SMTP_PORTA (587), CARBONO_SMTP_SEGURANCA (starttls | ssl | nenhuma),
-    CARBONO_SMTP_USUARIO, CARBONO_SMTP_SENHA, CARBONO_SMTP_REMETENTE ("CarbonMG <nao-responda@...>")
+    CARBONO_SMTP_USUARIO, CARBONO_SMTP_SENHA, CARBONO_SMTP_REMETENTE ("Lastro Carbono <nao-responda@...>")
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from typing import Protocol
 from .auditoria import registrar
 from .banco import ErroNegocio, NaoAutorizado, buscar
 
-log = logging.getLogger("carbonmg")
+log = logging.getLogger("lastro")
 
 OPCIONAIS = ("lembrete", "alerta")           # o titular pode desligar
 MAX_TENTATIVAS = 6
@@ -51,7 +51,7 @@ def _iso(d: datetime) -> str:
 
 
 def _nome_plataforma() -> str:
-    return os.environ.get("PLATAFORMA_NOME", "CarbonMG")
+    return os.environ.get("PLATAFORMA_NOME", "Lastro Carbono")
 
 
 def url_painel() -> str | None:
@@ -198,8 +198,8 @@ def montar(e: sqlite3.Row, remetente: str) -> EmailMessage:
     msg["To"] = e["para"]
     msg["Subject"] = e["assunto"]
     msg["Date"] = format_datetime(_agora())
-    dominio = parseaddr(remetente)[1].rpartition("@")[2] or "carbonmg.local"
-    msg["Message-ID"] = f"<carbonmg-{e['id']}-{hashlib.sha256(e['chave'].encode()).hexdigest()[:16]}@{dominio}>"
+    dominio = parseaddr(remetente)[1].rpartition("@")[2] or "lastro.local"
+    msg["Message-ID"] = f"<lastro-{e['id']}-{hashlib.sha256(e['chave'].encode()).hexdigest()[:16]}@{dominio}>"
     msg["Auto-Submitted"] = "auto-generated"       # RFC 3834: evita resposta automática em laço
     msg.set_content(e["texto"])
     return msg
@@ -214,7 +214,7 @@ def despachar(con: sqlite3.Connection, transporte: Transporte | None = None, *, 
         if transporte is None:
             return {"situacao": "nao_configurado", "enviados": 0, "falhas": 0, "adiados": 0}
     agora = agora or _agora()
-    remetente = os.environ.get("CARBONO_SMTP_REMETENTE", f"{_nome_plataforma()} <nao-responda@carbonmg.local>")
+    remetente = os.environ.get("CARBONO_SMTP_REMETENTE", f"{_nome_plataforma()} <nao-responda@lastro.local>")
     # reservas antigas: o processo caiu no meio do envio
     con.execute("UPDATE email_saida SET situacao='pendente' WHERE situacao='enviando' AND reservado_em < ?",
                 (_iso(agora - timedelta(minutes=RESERVA_MINUTOS)),))

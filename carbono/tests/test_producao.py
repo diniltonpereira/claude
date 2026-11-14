@@ -141,8 +141,8 @@ def test_convite_define_senha_uma_vez(prod):
 
 def _govbr_env(monkeypatch):
     for k, v in {"GOVBR_CLIENT_ID": "cid", "GOVBR_CLIENT_SECRET": "seg",
-                 "GOVBR_REDIRECT_URI": "https://carbonmg.exemplo/auth/govbr/retorno",
-                 "CARBONO_URL_PUBLICA": "https://carbonmg.exemplo"}.items():
+                 "GOVBR_REDIRECT_URI": "https://lastro.exemplo/auth/govbr/retorno",
+                 "CARBONO_URL_PUBLICA": "https://lastro.exemplo"}.items():
         monkeypatch.setenv(k, v)
 
 
@@ -185,10 +185,10 @@ def test_logout_de_quem_entrou_pelo_govbr_passa_pelo_login_unico(prod, monkeypat
     gov = GovBrFalso("12345678909")
     code, state = gov.autorizar(acesso.govbr_url_login(c))
     r = acesso.govbr_callback(c, code, state, cliente=gov.cliente)
-    cli.cookies.set("carbonmg_sessao", r["token"])
+    cli.cookies.set("lastro_sessao", r["token"])
     saida = cli.post("/auth/logout", headers={"X-CSRF-Token": r["csrf"]}).json()
     assert saida["logout_govbr"] == ("https://sso.staging.acesso.gov.br/logout?post_logout_redirect_uri="
-                                     "https%3A%2F%2Fcarbonmg.exemplo%2Fpainel%2F")
+                                     "https%3A%2F%2Flastro.exemplo%2Fpainel%2F")
     entrar(cli)  # login por senha: sem logout no gov.br
     csrf = cli.get("/eu").json()["csrf"]
     assert cli.post("/auth/logout", headers={"X-CSRF-Token": csrf}).json()["logout_govbr"] is None

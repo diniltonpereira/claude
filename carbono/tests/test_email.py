@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from plataforma import acesso, envio, terceirizadas
 from plataforma.banco import VERSAO_ESQUEMA, ErroNegocio, conectar
 
-from .test_carbonmg import _anexos, ct, lancar_meses, s  # noqa: F401 — fixtures reaproveitadas
+from .test_especificacao import _anexos, ct, lancar_meses, s  # noqa: F401 — fixtures reaproveitadas
 from .test_producao import SENHA, entrar, prod  # noqa: F401
 
 
@@ -177,7 +177,7 @@ def smtp(monkeypatch):
     monkeypatch.setenv("CARBONO_SMTP_HOST", "127.0.0.1")
     monkeypatch.setenv("CARBONO_SMTP_PORTA", str(srv.server_address[1]))
     monkeypatch.setenv("CARBONO_SMTP_SEGURANCA", "nenhuma")
-    monkeypatch.setenv("CARBONO_SMTP_REMETENTE", "CarbonMG <nao-responda@pref.mg.gov.br>")
+    monkeypatch.setenv("CARBONO_SMTP_REMETENTE", "Lastro Carbono <nao-responda@pref.mg.gov.br>")
     yield srv
     srv.shutdown()
 

@@ -31,7 +31,7 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
     ins = lambda sql, *a: c.execute(sql, a).lastrowid  # noqa: E731
 
     # ------------------------------------------------ cadastros
-    reg = ins("INSERT INTO usuario (nome, papel) VALUES ('Equipe CarbonMG', 'registrador')")
+    reg = ins("INSERT INTO usuario (nome, papel) VALUES ('Equipe Lastro Carbono', 'registrador')")
     pref = ins("INSERT INTO organizacao (nome,cnpj,tipo,esfera,municipio_ibge) VALUES "
                "('Prefeitura de Vale Verde (fictícia)','11111111000191','orgao_publico','municipal','3100000')")
     sanea = ins("INSERT INTO organizacao (nome,cnpj,tipo,contrato_ref,poder_concedente_id) VALUES "

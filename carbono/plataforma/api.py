@@ -1,4 +1,4 @@
-"""API REST da plataforma CarbonMG (FastAPI). Documentação interativa em /docs.
+"""API REST da plataforma Lastro Carbono (FastAPI). Documentação interativa em /docs.
 
 Autenticação do MVP: cabeçalho `X-Usuario-Id`. Em produção, troque por login gov.br
 (OpenID Connect) para servidores e e-mail + senha + 2FA para os demais, mantendo a mesma
@@ -31,7 +31,7 @@ from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario
                             checar_projeto_publico, checar_reparticao_comunidade, enquadrar_operador,
                             fase_em)
 
-NOME = os.environ.get("PLATAFORMA_NOME", "CarbonMG")
+NOME = os.environ.get("PLATAFORMA_NOME", "Lastro Carbono")
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
@@ -401,9 +401,9 @@ class TermosIn(BaseModel):
     versao: str
 
 
-COOKIE = "carbonmg_sessao"
+COOKIE = "lastro_sessao"
 LIVRES_DE_TERMOS = {"/eu", "/eu/termos", "/eu/dados", "/auth/logout", "/privacidade"}
-log = logging.getLogger("carbonmg")
+log = logging.getLogger("lastro")
 
 # Mapa: camada de fundo configurável (o padrão é o OpenStreetMap; em produção prefira um provedor
 # contratado ou o servidor de mapas do Estado). Só a origem dos ladrilhos entra na CSP.

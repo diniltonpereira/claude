@@ -1,5 +1,5 @@
 "use strict";
-/* Painel do CarbonMG. Consome a API REST da própria plataforma (mesma origem). */
+/* Painel do Lastro Carbono. Consome a API REST da própria plataforma (mesma origem). */
 
 const estado = { uid: null, eu: null, fatores: null, modo: "producao", csrf: null, govbr: false, termosVersao: null };
 const producao = () => estado.modo === "producao";
@@ -27,7 +27,7 @@ async function buscarRede(caminho, opcoes) {
   let r;
   try { r = await fetch(caminho, opcoes); }
   catch { throw new SemConexao("Sem conexão com o servidor."); }
-  if (r.status === 503 && r.headers.get("X-CarbonMG-Offline")) throw new SemConexao((await r.json()).erro);
+  if (r.status === 503 && r.headers.get("X-Lastro-Offline")) throw new SemConexao((await r.json()).erro);
   return r;
 }
 
@@ -45,7 +45,7 @@ async function carregarSessao() {
 }
 
 async function limparDadosDoAparelho() {
-  try { await caches.delete("carbonmg-api"); } catch { /* sem cache */ }
+  try { await caches.delete("lastro-api"); } catch { /* sem cache */ }
   navigator.serviceWorker?.controller?.postMessage("LIMPAR_DADOS");
 }
 
@@ -252,7 +252,7 @@ async function telaInicio() {
     const cts = await api("GET", "/contratos");
     resumo = `<section class="bloco"><h2>${p === "fiscal" ? "Contratos que você fiscaliza" : "Seus contratos"}</h2>${tabelaContratos(cts)}</section>`;
   }
-  conteudo.innerHTML = `<h1>${estado.eu ? "Olá, " + esc(estado.eu.usuario.nome.split(" ")[0]) : "CarbonMG"}</h1>
+  conteudo.innerHTML = `<h1>${estado.eu ? "Olá, " + esc(estado.eu.usuario.nome.split(" ")[0]) : "Lastro Carbono"}</h1>
     <p class="introducao">Inventário de emissões, gestão de terceirizadas e compensação com créditos certificados por terceiros. A plataforma organiza e comprova; não certifica, não verifica e não emite créditos.</p>
     ${resumo}
     <section class="bloco"><h2>Onde estamos na implantação do SBCE</h2>

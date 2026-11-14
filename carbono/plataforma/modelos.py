@@ -62,7 +62,7 @@ class _Doc:
         self.d.add_heading(titulo, level=1)
         self.d.add_paragraph(subtitulo)
         rodape = self.d.sections[0].footer.paragraphs[0]
-        rodape.text = f"Minuta gerada pelo CarbonMG em {date.today():%d/%m/%Y}. Documento editável."
+        rodape.text = f"Minuta gerada pelo Lastro Carbono em {date.today():%d/%m/%Y}. Documento editável."
         rodape.runs[0].font.size = Pt(8)
 
     def secao(self, titulo: str) -> None:

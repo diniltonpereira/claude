@@ -118,7 +118,7 @@ def _conferir_totp(con, u: sqlite3.Row, codigo: str, instante: float | None = No
     return False
 
 
-def uri_totp(segredo: str, email: str, emissor: str = "CarbonMG") -> str:
+def uri_totp(segredo: str, email: str, emissor: str = "Lastro Carbono") -> str:
     return f"otpauth://totp/{emissor}:{email}?" + urlencode({"secret": segredo, "issuer": emissor})
 
 

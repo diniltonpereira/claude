@@ -1,11 +1,11 @@
-# Implantação do CarbonMG em produção
+# Implantação do Lastro Carbono em produção
 
 Roteiro para colocar o piloto no ar com uma prefeitura. A lista do que fazer, com responsáveis e prazos, está em `docs/CHECKLIST_PILOTO.md`. Tudo aqui foi testado com a imagem Docker do projeto. A integração real com o gov.br depende de credenciais que só o órgão obtém; o fluxo foi testado com um provedor simulado.
 
 ## 1. Arquitetura do piloto
 
 ```
-Internet ──TLS──► proxy reverso (Caddy/Nginx/balanceador) ──HTTP──► contêiner carbonmg :8000
+Internet ──TLS──► proxy reverso (Caddy/Nginx/balanceador) ──HTTP──► contêiner lastro :8000
                                                                      ├─ volume /dados  (carbono.db + anexos/)
                                                                      └─ pasta /backups (cópias diárias)
 ```
@@ -36,7 +36,7 @@ Preencha:
 ### 2.2 Subir
 ```bash
 docker compose build
-docker compose run --rm carbonmg python -m plataforma criar-admin --email adm@orgao.mg.gov.br --nome "Administração"
+docker compose run --rm lastro python -m plataforma criar-admin --email adm@orgao.mg.gov.br --nome "Administração"
 docker compose up -d
 ```
 O `criar-admin` pede a senha (mínimo de 12 caracteres) e mostra o segredo da verificação em duas etapas, que deve ser cadastrado num aplicativo autenticador. A administração não entra sem esse código.
@@ -49,7 +49,7 @@ docker build --secret id=ca,src=ca-do-proxy.crt --build-arg HTTPS_PROXY=http://p
 
 ### 2.3 Proxy reverso com TLS (exemplo com Caddy)
 ```
-carbonmg.orgao.mg.gov.br {
+lastro.orgao.mg.gov.br {
     reverse_proxy 127.0.0.1:8000
 }
 ```
@@ -82,18 +82,18 @@ O cookie de sessão é `Secure`: em produção, o acesso **tem** de ser por HTTP
 
 | Rotina | Comando | Frequência |
 | --- | --- | --- |
-| Lembretes, alertas e score das terceirizadas | `docker compose exec carbonmg python -m plataforma rotina-diaria` | diária (cron do servidor) |
+| Lembretes, alertas e score das terceirizadas | `docker compose exec lastro python -m plataforma rotina-diaria` | diária (cron do servidor) |
 | Entrega de e-mails | automática pelo `servir`, a cada minuto (ou `enviar-emails` no cron, com `CARBONO_ENVIO_AUTOMATICO=0`) | contínua |
-| Revarredura dos anexos com as assinaturas do dia | `docker compose exec carbonmg python -m plataforma varrer-anexos` | diária, depois da atualização do ClamAV |
-| Backup | `docker compose exec carbonmg python -m plataforma backup --destino /backups` | diária; copie a pasta `backups/` para outro local em região BR |
+| Revarredura dos anexos com as assinaturas do dia | `docker compose exec lastro python -m plataforma varrer-anexos` | diária, depois da atualização do ClamAV |
+| Backup | `docker compose exec lastro python -m plataforma backup --destino /backups` | diária; copie a pasta `backups/` para outro local em região BR |
 | Teste de restauração | ver 4.1 | mensal |
 | Atualização de versão | `git pull && docker compose build && docker compose up -d` | as migrações do banco rodam sozinhas ao iniciar |
 
 ### 4.1 Restaurar
 ```bash
-docker compose stop carbonmg
-docker compose run --rm carbonmg python -m plataforma restaurar /backups/carbonmg-AAAAMMDDTHHMMSSZ.db
-docker compose start carbonmg
+docker compose stop lastro
+docker compose run --rm lastro python -m plataforma restaurar /backups/lastro-AAAAMMDDTHHMMSSZ.db
+docker compose start lastro
 ```
 **O que a restauração confere antes de substituir o banco:**
 - o SHA-256 do manifesto;
@@ -122,7 +122,7 @@ O banco anterior fica salvo com o sufixo `.antes-da-restauracao`.
 
 ### 5.1 Antivírus e conteúdo ativo nos anexos
 
-- **ClamAV:** o `compose.yaml` sobe o serviço `clamav` (imagem oficial `clamav/clamav:1.4`), que atualiza as assinaturas sozinho a cada 2 horas. O servidor precisa de saída para `database.clamav.net`. A primeira carga das assinaturas leva alguns minutos e usa cerca de 1,5 GB de RAM; o `carbonmg` só sobe quando o antivírus está pronto.
+- **ClamAV:** o `compose.yaml` sobe o serviço `clamav` (imagem oficial `clamav/clamav:1.4`), que atualiza as assinaturas sozinho a cada 2 horas. O servidor precisa de saída para `database.clamav.net`. A primeira carga das assinaturas leva alguns minutos e usa cerca de 1,5 GB de RAM; o `lastro` só sobe quando o antivírus está pronto.
 - **Exame antes de gravar:** cada arquivo vai ao `clamd` pela rede interna do Docker, antes de ser salvo. Arquivo infectado é recusado (HTTP 409), não é gravado e a tentativa fica na trilha de auditoria (`anexo_recusado`, com o nome da ameaça e o SHA-256).
 - **Falha fechada:** em produção, sem `CARBONO_CLAMAV` a aplicação não sobe; se o antivírus cair, os envios são recusados com HTTP 503 ("tente de novo em alguns minutos") e o `/saude` responde `degradado` (503), o que aciona o monitoramento. Só `CARBONO_ANTIVIRUS=desativado` dispensa o exame; registre essa decisão.
 - **Conteúdo ativo é recusado mesmo sem vírus conhecido** (faturas, notas e certidões não precisam dele):
@@ -232,7 +232,7 @@ Assinatura eletrônica **avançada** (Lei 14.063/2020, art. 4º, II), gratuita, 
 
 - **Credenciais:**
   - só um **gestor público** pode pedir, pelo "Serviço de Integração aos Produtos do Ecossistema da Conta Digital GOV.BR" (portal gov.br). A homologação sai em até 3 dias úteis e a produção em até 5;
-  - **a produção exige** que o sistema já esteja integrado ao Login Único (seção 3) e hospedado em **domínio oficial de governo** (por exemplo, `carbonmg.valeverde.mg.gov.br`), conforme os arts. 3º e 5º da Portaria SGD/MGI nº 7.076/2024;
+  - **a produção exige** que o sistema já esteja integrado ao Login Único (seção 3) e hospedado em **domínio oficial de governo** (por exemplo, `lastro.valeverde.mg.gov.br`), conforme os arts. 3º e 5º da Portaria SGD/MGI nº 7.076/2024;
   - cadastre a URL de retorno `https://SEU_ENDERECO/assinaturas/iti/retorno` e preencha `ITI_CLIENT_ID`, `ITI_CLIENT_SECRET` e `ITI_REDIRECT_URI`. Os endereços padrão são os de homologação; em produção, defina `ITI_OAUTH_URL` e `ITI_API_URL` com os informados junto com a credencial.
 - **Como funciona para quem assina:**
   1. o titular envia o contrato final em PDF na página do projeto ("Enviar para assinatura");
