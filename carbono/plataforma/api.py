@@ -6,8 +6,12 @@ checagem de papéis (ver docs/ARQUITETURA.md).
 """
 from __future__ import annotations
 
+import hmac
 import io
+import json
+import logging
 import os
+import time
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -18,7 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (anexos, auditoria, compensacao, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+from . import (acesso, anexos, auditoria, compensacao, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
                terceirizadas)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
@@ -50,6 +54,8 @@ class UsuarioIn(BaseModel):
     papel: Literal["elaborador", "verificador", "moderador", "registrador", "fiscal", "fornecedor", "auditor"]
     organizacao_id: int | None = None
     acreditado: bool = False  # organismo de inspeção acreditado (art. 32, parágrafo único)
+    email: str | None = Field(default=None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    cpf: str | None = None    # guardado só como HMAC
 
 
 class FatorIn(BaseModel):
@@ -314,6 +320,43 @@ class AssinaturaIn(BaseModel):
     averbacao_ref: str | None = None
 
 
+class UsuarioEdicaoIn(BaseModel):
+    email: str | None = Field(default=None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    cpf: str | None = None
+
+
+class LoginIn(BaseModel):
+    email: str
+    senha: str
+
+
+class SegundoFatorIn(BaseModel):
+    desafio: str
+    codigo: str = Field(pattern=r"^\d{6}$")
+
+
+class DefinirSenhaIn(BaseModel):
+    token: str
+    senha: str
+
+
+class CodigoIn(BaseModel):
+    codigo: str = Field(pattern=r"^\d{6}$")
+
+
+class TermosIn(BaseModel):
+    versao: str
+
+
+COOKIE = "carbonmg_sessao"
+LIVRES_DE_TERMOS = {"/eu", "/eu/termos", "/eu/dados", "/auth/logout", "/privacidade"}
+log = logging.getLogger("carbonmg")
+
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
+       "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
+
+
 # ---------------------------------------------------------------- aplicação
 def _qr_svg(texto: str) -> Response:
     import segno
@@ -322,14 +365,24 @@ def _qr_svg(texto: str) -> Response:
     return Response(buf.getvalue(), media_type="image/svg+xml")
 
 
-def criar_app(caminho_banco: str | None = None) -> FastAPI:
+def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> FastAPI:
+    """`modo`: 'producao' (padrão; sessão por cookie, gov.br/senha+TOTP, termos LGPD) ou 'demo'
+    (acesso pelo cabeçalho X-Usuario-Id, só para demonstração e testes)."""
+    modo = modo or os.environ.get("CARBONO_MODO", "producao")
+    if modo not in ("producao", "demo"):
+        raise RuntimeError("CARBONO_MODO deve ser 'producao' ou 'demo'.")
+    producao = modo == "producao"
+    if producao:
+        acesso.segredo_servidor()  # falha cedo se CARBONO_SEGREDO não estiver definido
+    cookie_seguro = producao and os.environ.get("CARBONO_COOKIE_INSEGURO") != "1"
     app = FastAPI(title=f"{NOME} — API",
                   description="Inventário de emissões, gestão de terceirizadas, registro e compensação "
                               "de créditos para órgãos públicos, PPPs e concessões. A plataforma não "
                               "certifica, não verifica e não emite créditos.", version="0.2.0")
     caminho = caminho_banco or os.environ.get("CARBONO_DB", "carbono.db")
-    conectar(caminho).close()  # cria o esquema e carrega os fatores iniciais
+    conectar(caminho).close()  # cria ou migra o esquema e carrega os fatores iniciais
     app.state.caminho = caminho
+    app.state.modo = modo
 
     @app.exception_handler(ErroNegocio)
     async def _neg(_: Request, exc: ErroNegocio):
@@ -345,11 +398,26 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def _ip(request: Request, call_next):
-        token = auditoria.ip_atual.set(request.client.host if request.client else None)
+        inicio = time.perf_counter()
+        ip = request.client.host if request.client else None
+        token = auditoria.ip_atual.set(ip)
         try:
-            return await call_next(request)
+            resposta = await call_next(request)
         finally:
             auditoria.ip_atual.reset(token)
+        # Cabeçalhos de segurança
+        h = resposta.headers
+        h.setdefault("Content-Security-Policy", CSP)
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if cookie_seguro:
+            h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        # Log estruturado, sem dados pessoais nem parâmetros de consulta
+        log.info(json.dumps({"metodo": request.method, "caminho": request.url.path, "status": resposta.status_code,
+                             "ms": round((time.perf_counter() - inicio) * 1000, 1)}))
+        return resposta
 
     def db():
         c = conectar(app.state.caminho, criar_esquema=False)
@@ -358,11 +426,35 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
         finally:
             c.close()
 
-    def usuario(x_usuario_id: int = Header(...), c: sqlite3.Connection = Depends(db)) -> sqlite3.Row:
-        try:
-            return buscar(c, "usuario", x_usuario_id)
-        except NaoEncontrado:
-            raise HTTPException(401, "Usuário não identificado.") from None
+    def usuario(request: Request, c: sqlite3.Connection = Depends(db)) -> sqlite3.Row:
+        if not producao:
+            uid = request.headers.get("x-usuario-id", "")
+            if not uid.isdigit():
+                raise HTTPException(401, "Usuário não identificado.")
+            try:
+                u = buscar(c, "usuario", int(uid))
+            except NaoEncontrado:
+                raise HTTPException(401, "Usuário não identificado.") from None
+            request.state.csrf = None
+        else:
+            try:
+                s = acesso.sessao_por_token(c, request.cookies.get(COOKIE))
+            except acesso.SessaoInvalida as exc:
+                raise HTTPException(401, str(exc)) from None
+            if request.method not in ("GET", "HEAD", "OPTIONS") and not hmac.compare_digest(
+                    request.headers.get("x-csrf-token", ""), s["csrf"]):
+                raise HTTPException(403, "Token CSRF ausente ou inválido. Recarregue a página.")
+            u = buscar(c, "usuario", s["usuario_id"])
+            request.state.csrf = s["csrf"]
+            if acesso.termos_pendentes(u) and request.url.path not in LIVRES_DE_TERMOS:
+                raise NaoAutorizado("Aceite os termos de uso e a política de privacidade para continuar.")
+        if not u["ativo"]:
+            raise HTTPException(401, "Usuário desativado.")
+        return u
+
+    def _abrir_sessao(resposta: Response, token: str) -> None:
+        resposta.set_cookie(COOKIE, token, httponly=True, secure=cookie_seguro, samesite="lax",
+                            max_age=acesso.SESSAO_HORAS * 3600, path="/")
 
     def registrador(u=Depends(usuario)):
         if u["papel"] != "registrador":
@@ -378,6 +470,121 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
         if not terceirizadas.pode_ver(c, u["id"], ct):
             raise NaoAutorizado("Contrato de outra organização.")
         return ct
+
+    # ---------------- acesso ----------------
+    @app.get("/auth/config")
+    def auth_config():
+        return {"modo": modo, "govbr": bool(acesso.config_govbr()), "termos_versao": acesso.TERMOS_VERSAO}
+
+    def _exigir_producao():
+        if not producao:
+            raise HTTPException(404, "Disponível apenas no modo produção.")
+
+    @app.post("/auth/login")
+    def login(d: LoginIn, request: Request, c=Depends(db)):
+        _exigir_producao()
+        r = acesso.login_senha(c, d.email, d.senha, request.client.host if request.client else None)
+        if r["segundo_fator"]:
+            return {"segundo_fator": True, "desafio": r["desafio"]}
+        resp = JSONResponse({"segundo_fator": False, "csrf": r["csrf"]})
+        _abrir_sessao(resp, r["token"])
+        return resp
+
+    @app.post("/auth/login/2fa")
+    def login_2fa(d: SegundoFatorIn, request: Request, c=Depends(db)):
+        _exigir_producao()
+        r = acesso.login_segundo_fator(c, d.desafio, d.codigo, request.client.host if request.client else None)
+        resp = JSONResponse({"csrf": r["csrf"]})
+        _abrir_sessao(resp, r["token"])
+        return resp
+
+    @app.post("/auth/logout")
+    def logout(request: Request, u=Depends(usuario), c=Depends(db)):
+        acesso.encerrar(c, request.cookies.get(COOKIE))
+        auditoria.registrar(c, u["id"], "logout", "usuario", u["id"])
+        resp = JSONResponse({"ok": True})
+        resp.delete_cookie(COOKIE, path="/")
+        return resp
+
+    @app.get("/auth/govbr", include_in_schema=False)
+    def govbr_inicio(c=Depends(db)):
+        _exigir_producao()
+        return RedirectResponse(acesso.govbr_url_login(c), status_code=302)
+
+    @app.get("/auth/govbr/retorno", include_in_schema=False)
+    def govbr_retorno(request: Request, code: str = "", state: str = "", c=Depends(db)):
+        _exigir_producao()
+        try:
+            r = acesso.govbr_callback(c, code, state, request.client.host if request.client else None)
+        except (NaoAutorizado, ErroNegocio) as exc:
+            from urllib.parse import quote
+            return RedirectResponse(f"/painel/#/entrar?erro={quote(str(exc))}", status_code=302)
+        resp = RedirectResponse("/painel/#/inicio", status_code=302)
+        _abrir_sessao(resp, r["token"])
+        return resp
+
+    @app.post("/auth/definir-senha")
+    def definir_senha(d: DefinirSenhaIn, c=Depends(db)):
+        _exigir_producao()
+        acesso.definir_senha(c, d.token, d.senha)
+        return {"ok": True}
+
+    @app.post("/auth/2fa/iniciar")
+    def iniciar_2fa(u=Depends(usuario), c=Depends(db)):
+        import segno
+        r = acesso.iniciar_totp(c, u["id"])
+        buf = io.BytesIO()
+        segno.make_qr(r["uri"], error="m").save(buf, kind="svg", scale=5, border=2, xmldecl=False)
+        return {**r, "qr_svg": buf.getvalue().decode()}
+
+    @app.post("/auth/2fa/confirmar")
+    def confirmar_2fa(d: CodigoIn, u=Depends(usuario), c=Depends(db)):
+        acesso.confirmar_totp(c, u["id"], d.codigo)
+        return {"ok": True}
+
+    @app.post("/usuarios/{uid}/convite")
+    def convite(uid: int, request: Request, u=Depends(registrador), c=Depends(db)):
+        _exigir_producao()
+        token = acesso.gerar_convite(c, u["id"], uid)
+        return {"link": f"{_base_publica(request)}/painel/#/definir-senha/{token}",
+                "validade_horas": acesso.CONVITE_HORAS}
+
+    @app.patch("/usuarios/{uid}")
+    def editar_usuario(uid: int, d: UsuarioEdicaoIn, u=Depends(registrador), c=Depends(db)):
+        buscar(c, "usuario", uid)
+        mudancas = {}
+        if d.email:
+            mudancas["email"] = d.email.strip().lower()
+        if d.cpf:
+            mudancas["cpf_hmac"] = acesso.cpf_hmac(d.cpf)
+        if mudancas:
+            try:
+                c.execute(f"UPDATE usuario SET {', '.join(k + '=?' for k in mudancas)} WHERE id=?",
+                          (*mudancas.values(), uid))
+            except sqlite3.IntegrityError as exc:
+                raise ErroNegocio("E-mail ou CPF já cadastrado para outro usuário.") from exc
+            auditoria.registrar(c, u["id"], "editar_acesso", "usuario", uid, depois=sorted(mudancas))
+        return {"ok": True}
+
+    @app.post("/usuarios/{uid}/anonimizacao")
+    def anonimizar(uid: int, u=Depends(registrador), c=Depends(db)):
+        acesso.anonimizar(c, u["id"], uid)
+        return {"ok": True}
+
+    @app.get("/privacidade")
+    def privacidade():
+        """Política de privacidade (LGPD), pública."""
+        return acesso.politica_privacidade()
+
+    @app.post("/eu/termos")
+    def aceitar_termos(d: TermosIn, u=Depends(usuario), c=Depends(db)):
+        acesso.aceitar_termos(c, u["id"], d.versao)
+        return {"ok": True}
+
+    @app.get("/eu/dados")
+    def meus_dados(u=Depends(usuario), c=Depends(db)):
+        """Exportação dos dados pessoais do titular (LGPD, art. 18)."""
+        return acesso.meus_dados(c, u["id"])
 
     # ---------------- referências e público ----------------
     @app.get("/saude")
@@ -473,13 +680,15 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
         return {"id": oid, "conta_id": registro.abrir_conta(c, oid)}
 
     @app.get("/eu")
-    def eu(u=Depends(usuario), c=Depends(db)):
+    def eu(request: Request, u=Depends(usuario), c=Depends(db)):
         org, conta = None, None
         if u["organizacao_id"]:
             org = dict(buscar(c, "organizacao", u["organizacao_id"]))
             r = c.execute("SELECT id FROM conta WHERE organizacao_id=?", (org["id"],)).fetchone()
             conta = r["id"] if r else None
-        return {"usuario": dict(u), "organizacao": org, "conta_id": conta, "plataforma": NOME}
+        publico = {k: u[k] for k in ("id", "nome", "papel", "organizacao_id", "acreditado", "email", "totp_ativo")}
+        return {"usuario": publico, "organizacao": org, "conta_id": conta, "plataforma": NOME, "modo": modo,
+                "csrf": request.state.csrf, "termos_pendentes": producao and acesso.termos_pendentes(u)}
 
     @app.get("/organizacoes")
     def listar_orgs(u=Depends(usuario), c=Depends(db)):
@@ -499,16 +708,24 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
     @app.get("/usuarios")
     def listar_usuarios(_=Depends(registrador), c=Depends(db)):
         return [dict(r) for r in c.execute(
-            """SELECT u.*, o.nome AS organizacao FROM usuario u
+            """SELECT u.id, u.nome, u.papel, u.organizacao_id, u.acreditado, u.email, u.totp_ativo, u.ativo,
+                      u.cpf_hmac IS NOT NULL AS tem_cpf, u.senha_hash IS NOT NULL AS tem_senha, u.anonimizado_em,
+                      o.nome AS organizacao FROM usuario u
                LEFT JOIN organizacao o ON o.id = u.organizacao_id ORDER BY u.id""")]
 
     @app.post("/usuarios", status_code=201)
     def criar_usuario(d: UsuarioIn, u=Depends(registrador), c=Depends(db)):
         if d.organizacao_id is not None:
             buscar(c, "organizacao", d.organizacao_id)
-        uid = c.execute("INSERT INTO usuario (nome, papel, organizacao_id, acreditado) VALUES (?,?,?,?)",
-                        (d.nome, d.papel, d.organizacao_id, int(d.acreditado))).lastrowid
-        auditoria.registrar(c, u["id"], "criar", "usuario", uid, depois=d.model_dump())
+        try:
+            uid = c.execute(
+                "INSERT INTO usuario (nome, papel, organizacao_id, acreditado, email, cpf_hmac) VALUES (?,?,?,?,?,?)",
+                (d.nome, d.papel, d.organizacao_id, int(d.acreditado), d.email.strip().lower() if d.email else None,
+                 acesso.cpf_hmac(d.cpf) if d.cpf else None)).lastrowid
+        except sqlite3.IntegrityError as exc:
+            raise ErroNegocio("E-mail ou CPF já cadastrado para outro usuário.") from exc
+        auditoria.registrar(c, u["id"], "criar", "usuario", uid,
+                            depois={**d.model_dump(exclude={"cpf"}), "cpf_informado": bool(d.cpf)})
         return {"id": uid}
 
     # ---------------- unidades e instalações ----------------

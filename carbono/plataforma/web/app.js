@@ -1,7 +1,8 @@
 "use strict";
 /* Painel do CarbonMG. Consome a API REST da própria plataforma (mesma origem). */
 
-const estado = { uid: null, eu: null, fatores: null };
+const estado = { uid: null, eu: null, fatores: null, modo: "producao", csrf: null, govbr: false, termosVersao: null };
+const producao = () => estado.modo === "producao";
 const $ = (sel) => document.querySelector(sel);
 const conteudo = $("#conteudo");
 
@@ -22,8 +23,19 @@ class Obsoleta extends Error {}
 
 function cabecalhos(json = true) {
   const cab = json ? { "Content-Type": "application/json" } : {};
-  if (estado.uid) cab["X-Usuario-Id"] = estado.uid;
+  if (!producao() && estado.uid) cab["X-Usuario-Id"] = estado.uid;
+  if (producao() && estado.csrf) cab["X-CSRF-Token"] = estado.csrf;
   return cab;
+}
+
+async function carregarSessao() {
+  estado.eu = await api("GET", "/eu");
+  estado.csrf = estado.eu.csrf;
+}
+
+async function sair() {
+  if (producao()) { try { await api("POST", "/auth/logout"); } catch { /* sessão já encerrada */ } }
+  gravarSessao(null); estado.uid = null; estado.eu = null; estado.csrf = null; location.hash = "#/entrar";
 }
 
 async function lerErro(r) {
@@ -164,6 +176,7 @@ function menu() {
   if (p === "registrador") itens.push(["cadastros", "Cadastros e fatores"]);
   if (p === "registrador" || p === "auditor") itens.push(["auditoria", "Trilha de auditoria"]);
   itens.push(["transparencia", "Transparência"]);
+  if (p) itens.push(["conta", "Minha conta"]);
   const atual = location.hash.split("?")[0].split("/")[1] || "inicio";
   const ativo = { contratos: "terceirizadas", verificar: "transparencia" }[atual] || atual;
   $("#menu").innerHTML = itens.map(([r, n]) =>
@@ -174,7 +187,7 @@ function menu() {
     const u = estado.eu.usuario;
     s.innerHTML = `<span><strong>${esc(u.nome)}</strong> <span class="papel">· ${esc(ROTULO_PAPEL[u.papel])}${estado.eu.organizacao ? " · " + esc(estado.eu.organizacao.nome) : ""}</span></span>
       <button class="botao secundario" id="sair">Sair</button>`;
-    $("#sair").onclick = () => { gravarSessao(null); estado.uid = null; estado.eu = null; location.hash = "#/entrar"; };
+    $("#sair").onclick = sair;
   } else {
     s.innerHTML = `<a href="#/entrar">Entrar</a>`;
   }
@@ -182,6 +195,7 @@ function menu() {
 
 // ---------------------------------------------------------------- entrada e início
 async function telaEntrar() {
+  if (producao()) return telaEntrarProducao();
   conteudo.innerHTML = `<section class="entrada bloco">
     <h1>Entrar</h1>
     <p class="introducao">No piloto, o acesso é pelo número de usuário fornecido pela administração. Na versão de produção, servidores entram com gov.br e terceirizadas com e-mail, senha e verificação em duas etapas.</p>
@@ -229,6 +243,113 @@ async function telaInicio() {
       <p class="memoria" style="margin-top:1rem">Art. 50 da Lei 15.042/2024, considerando a prorrogação da fase I. Plano de monitoramento e relato passam a ser exigidos na fase III; a conciliação, na fase IV.</p>
     </section>
     ${estado.eu ? "" : `<p><a class="botao" href="#/entrar">Entrar no painel</a></p>`}`;
+}
+
+async function telaEntrarProducao() {
+  const erroGov = new URLSearchParams(location.hash.split("?")[1] || "").get("erro");
+  conteudo.innerHTML = `<section class="entrada bloco">
+    <h1>Entrar</h1>
+    ${erroGov ? `<p class="erro-campo">${esc(erroGov)}</p>` : ""}
+    ${estado.govbr ? `<p><a class="botao govbr" href="/auth/govbr">Entrar com gov.br</a></p>
+      <p class="memoria">Servidores públicos entram com a conta gov.br. Empresas usam e-mail e senha.</p>` : ""}
+    <form id="f-login" class="grade">
+      <label class="largo">E-mail<input name="email" type="email" autocomplete="username" required></label>
+      <label class="largo">Senha<input name="senha" type="password" autocomplete="current-password" required></label>
+      <div class="acoes largo"><button type="submit" class="botao${estado.govbr ? " secundario" : ""}">Entrar com e-mail</button></div>
+      <p class="erro-campo largo"></p></form>
+    <form id="f-2fa" class="grade" hidden>
+      <label class="largo">Código do aplicativo autenticador<input name="codigo" inputmode="numeric" pattern="\\d{6}" maxlength="6" autocomplete="one-time-code" required></label>
+      <div class="acoes largo"><button type="submit" class="botao">Confirmar</button></div>
+      <p class="erro-campo largo"></p></form>
+    <p class="memoria"><a href="#/privacidade">Política de privacidade</a></p></section>`;
+  let desafio = null;
+  const concluir = async () => { await carregarSessao(); location.hash = "#/inicio"; };
+  aoEnviar($("#f-login"), async (d) => {
+    const r = await api("POST", "/auth/login", d);
+    if (r.segundo_fator) {
+      desafio = r.desafio; $("#f-login").hidden = true; $("#f-2fa").hidden = false; $("#f-2fa").elements.codigo.focus();
+      return;
+    }
+    estado.csrf = r.csrf; await concluir();
+  });
+  aoEnviar($("#f-2fa"), async ({ codigo }) => {
+    const r = await api("POST", "/auth/login/2fa", { desafio, codigo });
+    estado.csrf = r.csrf; await concluir();
+  });
+}
+
+async function telaDefinirSenha(token) {
+  conteudo.innerHTML = `<section class="entrada bloco"><h1>Definir senha</h1>
+    <p class="introducao">Crie sua senha de acesso. Use pelo menos 12 caracteres; uma frase longa é mais segura e fácil de lembrar.</p>
+    <form id="f-senha" class="grade">
+      <label class="largo">Nova senha<input name="senha" type="password" minlength="12" autocomplete="new-password" required></label>
+      <label class="largo">Repita a senha<input name="confirmacao" type="password" minlength="12" autocomplete="new-password" required></label>
+      <div class="acoes largo"><button type="submit" class="botao">Salvar senha</button></div><p class="erro-campo largo"></p></form></section>`;
+  aoEnviar($("#f-senha"), async (d) => {
+    if (d.senha !== d.confirmacao) throw new Error("As senhas não conferem.");
+    await api("POST", "/auth/definir-senha", { token, senha: d.senha });
+    avisar("Senha definida. Entre com seu e-mail."); location.hash = "#/entrar";
+  });
+}
+
+async function politicaHtml() {
+  const p = await api("GET", "/privacidade");
+  return `<dl class="ficha">
+    <div><dt>Controlador</dt><dd>${esc(p.controlador)}</dd></div>
+    <div><dt>Encarregado (DPO)</dt><dd>${esc(p.encarregado)}</dd></div>
+    <div><dt>Para que usamos seus dados</dt><dd>${p.finalidades.map(esc).join("<br>")}</dd></div>
+    <div><dt>Quais dados</dt><dd>${p.dados.map(esc).join("; ")}</dd></div>
+    <div><dt>Base legal</dt><dd>${p.bases_legais.map(esc).join("; ")}</dd></div>
+    <div><dt>Seus direitos</dt><dd>${esc(p.direitos)}</dd></div>
+    <div><dt>Compartilhamento</dt><dd>${esc(p.compartilhamento)}</dd></div></dl>
+    <p class="memoria">Versão ${esc(p.versao_termos)}</p>`;
+}
+
+async function telaPrivacidade() {
+  conteudo.innerHTML = `<h1>Política de privacidade</h1><section class="bloco">${await politicaHtml()}</section>`;
+}
+
+async function telaTermos() {
+  conteudo.innerHTML = `<h1>Termos de uso e privacidade</h1>
+    <p class="introducao">Antes de continuar, leia como a plataforma trata seus dados pessoais.</p>
+    <section class="bloco">${await politicaHtml()}
+      <form id="f-termos" class="grade"><label class="opcao largo"><input type="checkbox" name="ciente" required> Li e estou ciente dos termos de uso e da política de privacidade.</label>
+      <div class="acoes largo"><button type="submit" class="botao">Aceitar e continuar</button></div><p class="erro-campo largo"></p></form></section>`;
+  aoEnviar($("#f-termos"), async () => {
+    await api("POST", "/eu/termos", { versao: estado.termosVersao });
+    await carregarSessao(); location.hash = "#/inicio";
+  });
+}
+
+async function telaConta() {
+  const u = estado.eu.usuario;
+  conteudo.innerHTML = `<h1>Minha conta</h1>
+    <section class="bloco"><dl class="ficha">
+      <div><dt>Nome</dt><dd>${esc(u.nome)}</dd></div>
+      <div><dt>E-mail</dt><dd>${esc(u.email || "—")}</dd></div>
+      <div><dt>Papel</dt><dd>${esc(ROTULO_PAPEL[u.papel])}</dd></div>
+      <div><dt>Organização</dt><dd>${esc(estado.eu.organizacao?.nome || "—")}</dd></div></dl></section>
+    ${producao() ? `<section class="bloco"><h2>Verificação em duas etapas</h2>
+      ${u.totp_ativo ? `<p><span class="situacao aprovado">Ativa</span></p>`
+        : `<p>Proteja sua conta com um código do aplicativo autenticador do celular.</p>
+           <button type="button" class="botao" id="b-2fa">Ativar verificação em duas etapas</button><div id="totp"></div>`}</section>` : ""}
+    <section class="bloco"><h2>Seus dados (LGPD)</h2>
+      <p>Baixe os dados pessoais que a plataforma guarda sobre você. Para correção ou anonimização, fale com a administração.</p>
+      <div class="acoes"><button type="button" class="botao secundario" id="b-dados">Baixar meus dados</button>
+        <a class="botao secundario" href="#/privacidade">Política de privacidade</a></div></section>`;
+  $("#b-dados").onclick = () => baixar("/eu/dados", "meus-dados.json").catch((e) => avisar(e.message, true));
+  const b = $("#b-2fa");
+  if (b) b.onclick = async () => {
+    try {
+      const r = await api("POST", "/auth/2fa/iniciar");
+      $("#totp").innerHTML = `<div class="totp">${r.qr_svg}<div><p>Leia o QR Code no aplicativo autenticador ou digite o segredo:</p>
+        <p class="mono">${esc(r.segredo)}</p>
+        <form id="f-totp" class="grade"><label>Código de 6 dígitos<input name="codigo" inputmode="numeric" maxlength="6" required></label>
+        <div class="acoes"><button type="submit" class="botao">Confirmar</button></div><p class="erro-campo largo"></p></form></div></div>`;
+      b.hidden = true;
+      aoEnviar($("#f-totp"), async (d) => { await api("POST", "/auth/2fa/confirmar", d); await carregarSessao(); avisar("Verificação em duas etapas ativada."); telaConta(); });
+    } catch (e) { avisar(e.message, true); }
+  };
 }
 
 // ---------------------------------------------------------------- painel do gestor
@@ -791,12 +912,16 @@ async function telaCadastros() {
         <label>Código IBGE do município <span class="ajuda">7 dígitos</span><input name="municipio_ibge" pattern="\\d{7}" inputmode="numeric"></label>
         <div class="acoes largo"><button type="submit" class="botao">Cadastrar organização</button></div><p class="erro-campo largo"></p></form></section>
     <section class="bloco"><h2>Usuários</h2><div class="rolagem"><table><thead><tr><th class="num">Nº</th><th>Nome</th><th>Papel</th></tr></thead><tbody>
-      ${users.map((x) => `<tr><td class="num">${x.id}</td><td>${esc(x.nome)}<div class="memoria">${esc(x.organizacao || "")}</div></td><td>${esc(ROTULO_PAPEL[x.papel])}${x.acreditado ? " ✓" : ""}</td></tr>`).join("")}
+      ${users.map((x) => `<tr><td class="num">${x.id}</td><td>${esc(x.nome)}<div class="memoria">${esc(x.organizacao || "")}${x.email ? " · " + esc(x.email) : ""}${x.tem_cpf ? " · gov.br" : ""}${x.totp_ativo ? " · 2FA" : ""}</div>
+        ${x.ativo && x.id !== estado.eu.usuario.id ? `<div>${producao() && x.email ? `<button type="button" class="link" data-convite="${x.id}">Gerar convite</button> · ` : ""}<button type="button" class="link perigo-texto" data-anonimizar="${x.id}" data-nome="${esc(x.nome)}">Anonimizar</button></div>` : x.ativo ? "" : `<div class="memoria">Inativo</div>`}</td>
+        <td>${esc(ROTULO_PAPEL[x.papel])}${x.acreditado ? " ✓" : ""}</td></tr>`).join("")}
       </tbody></table></div>
       <h3 style="margin-top:1.25rem">Novo usuário</h3><form id="f-user" class="grade">
         <label class="largo">Nome<input name="nome" required></label>
         <label>Papel<select name="papel">${Object.entries(ROTULO_PAPEL).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
         <label>Organização<select name="organizacao_id"><option value="">Nenhuma</option>${orgs.map((o) => `<option value="${o.id}">${esc(o.nome)}</option>`).join("")}</select></label>
+        <label>E-mail <span class="ajuda">Para entrar com senha</span><input name="email" type="email"></label>
+        <label>CPF <span class="ajuda">Para entrar com gov.br; guardado só como código</span><input name="cpf" inputmode="numeric"></label>
         <label class="opcao largo"><input type="checkbox" name="acreditado"> Organismo de inspeção acreditado (art. 32, parágrafo único)</label>
         <div class="acoes largo"><button type="submit" class="botao">Cadastrar usuário</button></div><p class="erro-campo largo"></p></form></section></div>
     <section class="bloco"><h2>Fatores de emissão</h2>
@@ -815,6 +940,18 @@ async function telaCadastros() {
     const r = await api("POST", "/usuarios", { ...d, organizacao_id: d.organizacao_id ? Number(d.organizacao_id) : null });
     avisar(`Usuário cadastrado com o número ${r.id}.`); telaCadastros();
   });
+  conteudo.querySelectorAll("[data-convite]").forEach((b) => (b.onclick = async () => {
+    try {
+      const r = await api("POST", `/usuarios/${b.dataset.convite}/convite`);
+      await navigator.clipboard?.writeText(r.link).catch(() => {});
+      await confirmar("Convite gerado", `Envie este link ao usuário (vale ${r.validade_horas} horas e só pode ser usado uma vez): ${r.link}`, "Entendi");
+    } catch (e) { avisar(e.message, true); }
+  }));
+  conteudo.querySelectorAll("[data-anonimizar]").forEach((b) => (b.onclick = async () => {
+    if (!(await confirmar(`Anonimizar ${b.dataset.nome}?`, "Nome, e-mail, CPF e credenciais serão apagados e o acesso encerrado. Os atos já praticados permanecem na trilha de auditoria (obrigação legal).", "Anonimizar usuário"))) return;
+    try { await api("POST", `/usuarios/${b.dataset.anonimizar}/anonimizacao`); avisar("Usuário anonimizado."); telaCadastros(); }
+    catch (e) { avisar(e.message, true); }
+  }));
   aoEnviar($("#f-fator"), async (d) => {
     const ok = await confirmar("Publicar nova versão?", `O fator ${d.codigo} passa a valer ${d.valor} nos novos lançamentos. Os lançamentos já feitos mantêm a versão anterior.`, "Publicar versão");
     if (!ok) return;
@@ -1212,11 +1349,12 @@ async function telaVerificar(tipo, codigo) {
 }
 
 // ---------------------------------------------------------------- rotas
-const PUBLICAS = new Set(["entrar", "inicio", "transparencia", "verificar"]);
+const PUBLICAS = new Set(["entrar", "inicio", "transparencia", "verificar", "definir-senha", "privacidade"]);
 async function navegar() {
   const [caminho] = location.hash.split("?");
   const [, rota = "inicio", a, b] = caminho.split("/");
   if (!PUBLICAS.has(rota) && !estado.eu) { location.hash = "#/entrar"; return; }
+  if (estado.eu?.termos_pendentes && !["termos", "privacidade"].includes(rota)) { location.hash = "#/termos"; return; }
   menu();
   conteudo.innerHTML = `<p class="vazio">Carregando…</p>`;
   try {
@@ -1229,11 +1367,12 @@ async function navegar() {
       vendas: telaVendas, credenciamentos: telaCredenciamentos,
       projetos: () => (a ? telaProjeto(Number(a)) : telaProjetos()),
       verificar: () => telaVerificar(a, decodeURIComponent(b || "")),
+      "definir-senha": () => telaDefinirSenha(a), privacidade: telaPrivacidade, termos: telaTermos, conta: telaConta,
     };
     await (telas[rota] || telaInicio)();
   } catch (e) {
     if (e instanceof Obsoleta) return;
-    if (e.status === 401) { gravarSessao(null); estado.eu = null; location.hash = "#/entrar"; return; }
+    if (e.status === 401) { gravarSessao(null); estado.eu = null; estado.csrf = null; location.hash = "#/entrar"; return; }
     conteudo.innerHTML = `<section class="bloco"><h1>Não foi possível abrir esta tela</h1><p>${esc(e.message)}</p><p><a href="#/inicio">Voltar ao início</a></p></section>`;
   }
   conteudo.focus({ preventScroll: true });
@@ -1252,9 +1391,17 @@ window.addEventListener("unhandledrejection", (ev) => {
 });
 
 (async function iniciar() {
-  estado.uid = lerSessao();
-  if (estado.uid) {
-    try { estado.eu = await api("GET", "/eu"); } catch { estado.uid = null; gravarSessao(null); }
+  try {
+    const cfg = await (await fetch("/auth/config")).json();
+    Object.assign(estado, { modo: cfg.modo, govbr: cfg.govbr, termosVersao: cfg.termos_versao });
+  } catch { /* mantém produção */ }
+  if (producao()) {
+    try { await carregarSessao(); } catch { estado.eu = null; }
+  } else {
+    estado.uid = lerSessao();
+    if (estado.uid) {
+      try { estado.eu = await api("GET", "/eu"); } catch { estado.uid = null; gravarSessao(null); }
+    }
   }
   if (!location.hash) location.hash = "#/inicio"; else navegar();
 })();

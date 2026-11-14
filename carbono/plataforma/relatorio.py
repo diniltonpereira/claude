@@ -76,7 +76,7 @@ def html_relatorio(con: sqlite3.Connection, inventario_id: int, base_url: str = 
  .cifras{{display:flex;gap:2rem;flex-wrap:wrap}} .cifras b{{display:block;font-size:14pt}}
  @media print{{body{{margin:0}} .noprint{{display:none}}}}
 </style></head><body>
-<p class="noprint"><button onclick="print()">Imprimir ou salvar em PDF</button></p>
+<p class="noprint">Para salvar em PDF, use a impressão do navegador (Ctrl+P).</p>
 <h1>Inventário de emissões de gases de efeito estufa — {inv['ano']}</h1>
 <p>{e(org['nome'])} · CNPJ {e(org['cnpj'])} · Situação: <span class="{'' if aprovado else 'rascunho'}">{e(inv['status'])}</span>
 {'' if aprovado else ' — <b>documento preliminar, sem validade até a aprovação</b>'}</p>

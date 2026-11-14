@@ -5,7 +5,8 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 4
+VERSAO_ESQUEMA = 5
+VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
 PRAGMA foreign_keys = ON;
@@ -30,7 +31,20 @@ CREATE TABLE IF NOT EXISTS usuario (
                                                    'fiscal','fornecedor','auditor')),
     organizacao_id  INTEGER REFERENCES organizacao(id),
     -- Organismo de inspeção acreditado (Lei 15.042/2024, art. 32, parágrafo único)
-    acreditado      INTEGER NOT NULL DEFAULT 0 CHECK (acreditado IN (0,1))
+    acreditado      INTEGER NOT NULL DEFAULT 0 CHECK (acreditado IN (0,1)),
+    -- acesso (versão 5)
+    email           TEXT,
+    cpf_hmac        TEXT,                   -- HMAC-SHA256 do CPF (LGPD: o CPF não é guardado em claro)
+    senha_hash      TEXT,                   -- scrypt
+    totp_segredo    TEXT,
+    totp_ativo      INTEGER NOT NULL DEFAULT 0 CHECK (totp_ativo IN (0,1)),
+    totp_ultimo_passo INTEGER,              -- impede reuso do mesmo código
+    tentativas_falhas INTEGER NOT NULL DEFAULT 0,
+    bloqueado_ate   TEXT,
+    termos_versao   TEXT,
+    termos_aceitos_em TEXT,
+    ativo           INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0,1)),
+    anonimizado_em  TEXT
 );
 
 -- Fatores de emissão VERSIONADOS: nova versão nunca apaga a anterior (auditoria).
@@ -418,6 +432,38 @@ CREATE TABLE IF NOT EXISTS parceria (
     CHECK (assinatura = 'minuta' OR assinatura_ref IS NOT NULL)
 );
 
+-- ---------------------------------------------------------------- acesso (versão 5)
+CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_email ON usuario(email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_cpf ON usuario(cpf_hmac) WHERE cpf_hmac IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS sessao (
+    id              INTEGER PRIMARY KEY,
+    token_hash      TEXT NOT NULL UNIQUE,   -- SHA-256 do token do cookie (o token não é guardado)
+    usuario_id      INTEGER NOT NULL REFERENCES usuario(id),
+    csrf            TEXT NOT NULL,
+    pendente_2fa    INTEGER NOT NULL DEFAULT 0 CHECK (pendente_2fa IN (0,1)),
+    criada_em       TEXT NOT NULL,
+    expira_em       TEXT NOT NULL,
+    ultimo_uso      TEXT NOT NULL,
+    ip              TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_sessao_usuario ON sessao(usuario_id);
+
+CREATE TABLE IF NOT EXISTS convite (
+    id              INTEGER PRIMARY KEY,
+    token_hash      TEXT NOT NULL UNIQUE,
+    usuario_id      INTEGER NOT NULL REFERENCES usuario(id),
+    expira_em       TEXT NOT NULL,
+    usado_em        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS oidc_estado (
+    state           TEXT PRIMARY KEY,
+    nonce           TEXT NOT NULL,
+    verificador     TEXT NOT NULL,          -- PKCE code_verifier
+    criado_em       TEXT NOT NULL
+);
+
 -- Trilha de auditoria geral: quem, quando, de onde, o que havia antes e depois.
 CREATE TABLE IF NOT EXISTS auditoria (
     id              INTEGER PRIMARY KEY,
@@ -439,7 +485,45 @@ BEGIN SELECT RAISE(ABORT, 'trilha de auditoria é somente inclusão'); END;
 
 
 class EsquemaIncompativel(RuntimeError):
-    """Banco criado por versão anterior da plataforma."""
+    """Banco criado por versão da plataforma que não pode ser migrada."""
+
+
+def _migrar_4_para_5(con: sqlite3.Connection) -> None:
+    colunas = {r["name"] for r in con.execute("PRAGMA table_info(usuario)")}
+    novas = [("email", "TEXT"), ("cpf_hmac", "TEXT"), ("senha_hash", "TEXT"), ("totp_segredo", "TEXT"),
+             ("totp_ativo", "INTEGER NOT NULL DEFAULT 0 CHECK (totp_ativo IN (0,1))"),
+             ("totp_ultimo_passo", "INTEGER"), ("tentativas_falhas", "INTEGER NOT NULL DEFAULT 0"),
+             ("bloqueado_ate", "TEXT"), ("termos_versao", "TEXT"), ("termos_aceitos_em", "TEXT"),
+             ("ativo", "INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0,1))"), ("anonimizado_em", "TEXT")]
+    for nome, tipo in novas:
+        if nome not in colunas:
+            con.execute(f"ALTER TABLE usuario ADD COLUMN {nome} {tipo}")
+
+
+# Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
+# próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5}
+
+
+def migrar(con: sqlite3.Connection, caminho: str = "") -> int:
+    """Leva o banco até VERSAO_ESQUEMA. Devolve a versão de origem. Tudo numa transação."""
+    versao = con.execute("PRAGMA user_version").fetchone()[0]
+    if versao == VERSAO_ESQUEMA:
+        return versao
+    if versao < VERSAO_MINIMA_MIGRAVEL or versao > VERSAO_ESQUEMA:
+        raise EsquemaIncompativel(
+            f"O banco {caminho!r} está na versão {versao} do esquema; esta plataforma migra a partir da "
+            f"versão {VERSAO_MINIMA_MIGRAVEL} até a {VERSAO_ESQUEMA}. Restaure um backup compatível.")
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        for v in range(versao, VERSAO_ESQUEMA):
+            if MIGRACOES.get(v):
+                MIGRACOES[v](con)
+        con.execute("COMMIT")
+    except BaseException:
+        con.execute("ROLLBACK")
+        raise
+    return versao
 
 
 def conectar(caminho: str, criar_esquema: bool = True) -> sqlite3.Connection:
@@ -448,13 +532,13 @@ def conectar(caminho: str, criar_esquema: bool = True) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA busy_timeout = 5000")
     if criar_esquema:
-        versao = con.execute("PRAGMA user_version").fetchone()[0]
         tem_tabelas = con.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
-        if tem_tabelas and versao != VERSAO_ESQUEMA:
-            con.close()
-            raise EsquemaIncompativel(
-                f"O banco {caminho!r} é da versão {versao} do esquema; esta plataforma usa a versão "
-                f"{VERSAO_ESQUEMA}. Recrie o banco (não há migração automática no MVP).")
+        if tem_tabelas:
+            try:
+                migrar(con, caminho)
+            except EsquemaIncompativel:
+                con.close()
+                raise
         con.execute("PRAGMA journal_mode = WAL")
         con.executescript(ESQUEMA)
         con.execute(f"PRAGMA user_version = {VERSAO_ESQUEMA}")

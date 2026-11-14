@@ -38,6 +38,8 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | `compensacao.py` | Plano e execução da compensação voluntária e da conciliação SBCE |
 | `relatorio.py` | Relatório HTML para impressão em PDF e planilha XLSX |
 | `projetos.py` | Projetos de geração: cadastro, funil com checklist e evidência, parceria, travas dos arts. 43, 47 e 49 |
+| `acesso.py` | Sessões (cookie e hash), CSRF, senha scrypt, TOTP, bloqueio, convites, gov.br (OIDC com PKCE), termos e direitos LGPD |
+| `operacao.py` | Criação do administrador, backup e restauração verificados |
 | `marketplace.py` | Credenciamento, ofertas, catálogo, pedido no rito da despesa pública, carteira, minuta de TR |
 | `api.py` | Rotas REST e páginas estáticas em `/painel` |
 | `demo.py` | Cenário fictício completo |
@@ -80,7 +82,7 @@ O auditor não grava nada. As funções de escrita checam o papel, e o upload re
 - **Crédito voluntário:** sem `certificadora` e `certificado_anexo_id` não pode ser escriturado. Cancelado, exige `registro_externo_ref` (CHECK no esquema).
 - **Saldo:** nunca fica negativo, e um lote cancelado não volta a circular. Transferências e cancelamentos usam `BEGIN IMMEDIATE` e chave de idempotência.
 - **Pedido de compra:** o banco recusa estados sem os dados da etapa (CHECKs): não há empenho sem número, entrega sem lote, liquidação sem nota fiscal e fiscal, pagamento sem referência, nem empenho menor que o total. O empenho reserva a quantidade da oferta; o cancelamento devolve.
-- **Versão do esquema:** banco de outra versão (hoje 4) é recusado com `EsquemaIncompativel` (não há migração automática no MVP).
+- **Versão do esquema (hoje 5):** bancos a partir da versão 2 são migrados automaticamente ao conectar (`banco.migrar`, numa transação). Toda mudança em tabela existente precisa de uma função em `MIGRACOES`. Versões mais antigas são recusadas com `EsquemaIncompativel`.
 
 ## 5. Modelo de dados (resumo)
 
@@ -129,27 +131,6 @@ Correspondência com o modelo do prompt CarbonMG:
 
 Classes: A (80 a 100), B (60 a 79), C (40 a 59), D (até 39, sem selo). Uma queda para C ou D gera alerta ao fiscal. Os critérios de redução e de ações não vieram do prompt: são escolhas documentadas, ajustáveis em `PESOS` e na função.
 
-## 7. Produção: checklist
+## 7. Produção
 
-1. **Autenticação:** substituir o cabeçalho `X-Usuario-Id` (em `api.usuario`).
-   - Servidores: gov.br (OpenID Connect), associando o CPF ao `usuario`.
-   - Terceirizadas: e-mail, senha com hash Argon2 e 2FA (TOTP).
-   - Administração: 2FA obrigatório.
-   - Sessão em cookie `HttpOnly`, `Secure`, `SameSite=Lax`, com proteção CSRF.
-2. **Banco:** PostgreSQL. Traduzir os gatilhos para PL/pgSQL e usar `SELECT … FOR UPDATE` no lugar de `BEGIN IMMEDIATE`. Adotar migrações (Alembic).
-3. **Anexos:** armazenamento S3 compatível em região BR com criptografia em repouso, mantendo o nome por SHA-256. Antivírus no upload.
-4. **Canais de notificação:** implementar `terceirizadas.Notificador` para e-mail e WhatsApp Business API, com opt-in registrado (LGPD).
-5. **Agendamento:** cron diário de `python -m plataforma rotina-diaria`.
-6. **LGPD:**
-   - não guardar CPF em claro além do necessário;
-   - indicar o encarregado (DPO);
-   - termo de uso e de privacidade;
-   - exportação e exclusão de dados pessoais, respeitando os prazos de guarda de documentos públicos.
-7. **Operação:**
-   - backup diário em região BR, com teste de restauração;
-   - TLS;
-   - logs estruturados;
-   - monitoramento de `/saude`;
-   - disponibilidade-alvo de 99,5%.
-8. **Fatores:** publicar os valores oficiais vigentes (MCTI, Programa Brasileiro GHG Protocol) e conferir HFC e SF6 no AR6.
-9. **Funcionamento offline:** o painel não tem build e pode virar PWA com service worker e fila local de lançamentos (ver o roteiro).
+O guia operacional está em [`IMPLANTACAO.md`](IMPLANTACAO.md): configuração, Docker, proxy TLS, gov.br, rotinas, backup e restauração, controles de segurança e checklist LGPD. O modo produção é o padrão da API (`CARBONO_MODO=producao`); o modo demonstração (`--demo`) aceita o cabeçalho `X-Usuario-Id` e existe só para testes.

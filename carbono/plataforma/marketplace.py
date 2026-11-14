@@ -413,7 +413,7 @@ h1{{font-size:16pt}} h2{{font-size:12pt;margin-top:1.4rem;border-bottom:2px soli
 .aviso{{border:2px solid #A3243B;color:#A3243B;padding:.6rem .8rem;font-weight:700}}
 table{{border-collapse:collapse;width:100%}} td,th{{border:1px solid #D3DCD8;padding:.3rem .5rem;text-align:left}}
 @media print{{.noprint{{display:none}}}}</style></head><body>
-<p class="noprint"><button onclick="print()">Imprimir ou salvar em PDF</button></p>
+<p class="noprint">Para salvar em PDF, use a impressão do navegador (Ctrl+P).</p>
 <p class="aviso">MINUTA para instrução do processo. Deve ser revisada pela área demandante e submetida ao
 controle prévio de legalidade da assessoria jurídica (Lei 14.133/2021, art. 53) antes de qualquer contratação.</p>
 <h1>Termo de Referência — aquisição de créditos de carbono para compensação de emissões</h1>

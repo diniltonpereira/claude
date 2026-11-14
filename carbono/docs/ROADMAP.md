@@ -80,7 +80,7 @@ Escopo original:
 - Modelos de ETP, TR e relatório de sustentabilidade em DOCX editável, para compras do órgão que não sejam a contratação da própria plataforma.
 - Integração com o PNCP (publicação feita pelo órgão).
 - Importação de faturas CEMIG e planilhas.
-- Login gov.br, PostgreSQL e PWA com lançamento offline e sincronização (Norte de MG).
+- ~~Login gov.br~~ (feito na 0.5, aguardando credenciais do órgão), PostgreSQL (adiado, com critério em IMPLANTACAO.md) e PWA com lançamento offline e sincronização (Norte de MG).
 
 ### Fase 4 — SBCE e expansão (alvo: 12 meses)
 - Integração com o Registro Central do SBCE quando a API oficial existir.

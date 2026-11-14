@@ -27,9 +27,9 @@ Requisitos: Python 3.12 ou 3.13. Não há etapa de build.
 cd carbono
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m pytest -q                          # 87 testes
+python -m pytest -q                          # 100 testes
 python -m plataforma demo --banco demo.db    # dados fictícios completos
-python -m plataforma servir --banco demo.db  # http://127.0.0.1:8000 (painel) e /docs (API)
+python -m plataforma servir --banco demo.db --demo  # http://127.0.0.1:8000 (painel) e /docs (API)
 ```
 
 Na demonstração, entre com estes números de usuário:
@@ -82,8 +82,19 @@ python -m plataforma rotina-diaria --banco carbono.db     # cron: 1 vez por dia
 - [`docs/ROADMAP.md`](docs/ROADMAP.md): o que veio da especificação CarbonMG, o que foi ajustado por razão jurídica e o que falta.
 - [`docs/MARCO_LEGAL.md`](docs/MARCO_LEGAL.md): fundamentos legais.
 
+## Produção
+
+O modo produção é o padrão: login gov.br (servidores) ou e-mail, senha e verificação em duas etapas, sessão segura, termos LGPD, migrações automáticas, backup verificado e imagem Docker. O passo a passo está em [`docs/IMPLANTACAO.md`](docs/IMPLANTACAO.md):
+
+```bash
+cp .env.example .env          # preencha CARBONO_SEGREDO e os dados do órgão
+docker compose build
+docker compose run --rm carbonmg python -m plataforma criar-admin --email adm@orgao.mg.gov.br --nome "Administração"
+docker compose up -d          # coloque um proxy com TLS na frente
+```
+
 ## Avisos
 
 - Os dados da demonstração são **fictícios**. Os fatores de emissão iniciais são referências: atualize-os pela tela de fatores com os valores oficiais (MCTI e Programa Brasileiro GHG Protocol) antes de um inventário real.
 - Os valores de HFC e SF6 do conjunto AR6 estão marcados para conferência.
-- O acesso por número de usuário serve só ao piloto. Ver o checklist de produção.
+- O acesso por número de usuário existe só no modo demonstração (`--demo`) e é ignorado em produção.
