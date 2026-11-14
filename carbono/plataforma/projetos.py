@@ -13,13 +13,19 @@ Travas para avançar de etapa (Lei 15.042/2024):
   comunidade (art. 47, I, b).
 - Contrato entre gerador e desenvolvedor: averbação no registro de imóveis, exceto em projetos
   públicos (art. 43, § 5º).
+- Polígono da área: obrigatório em restauração florestal/PSA a partir do documento de concepção;
+  sobreposição relevante com outro projeto do mesmo tipo impede a validação (dupla contagem).
+  Depois da validação, o polígono não muda mais na plataforma.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 
 from .auditoria import registrar
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, transacao
+from . import geo
 from .enquadramento import checar_reparticao_comunidade
 from .registro import abrir_conta
 
@@ -41,6 +47,13 @@ TIPOS = {"biogas": "Biogás e biometano", "solar": "Energia solar", "eficiencia"
          "hidrogenio": "Hidrogênio verde"}
 AREAS_PUBLICAS = ("publica_propria", "publica_terceiros")
 AREAS_COMUNIDADES = ("terra_indigena", "quilombola", "comunidade_tradicional", "assentamento")
+EXIGE_POLIGONO = ("restauracao_psa",)
+# Sobreposição: abaixo de 0,01 ha é ruído de digitalização e nem aparece; é relevante a partir de 1 ha
+# ou de 1% da menor das duas áreas (vizinhos que dividem a divisa costumam ficar bem abaixo disso).
+SOBREPOSICAO_MINIMA_HA = 0.01
+SOBREPOSICAO_RELEVANTE_HA = 1.0
+SOBREPOSICAO_RELEVANTE_FRACAO = 0.01
+DIFERENCA_AREA_ALERTA = 0.10
 
 
 def _titular(con, usuario_id: int, projeto: sqlite3.Row) -> sqlite3.Row:
@@ -166,6 +179,96 @@ def assinar_parceria(con: sqlite3.Connection, usuario_id: int, projeto_id: int, 
     registrar(con, usuario_id, "assinar_parceria", "projeto", projeto_id, depois={"assinatura": assinatura_ref})
 
 
+# ---------------------------------------------------------------- polígono da área
+def area_atual(con: sqlite3.Connection, projeto_id: int) -> sqlite3.Row | None:
+    return con.execute("SELECT * FROM projeto_area WHERE projeto_id=? ORDER BY versao DESC LIMIT 1",
+                       (projeto_id,)).fetchone()
+
+
+def definir_area(con: sqlite3.Connection, usuario_id: int, projeto_id: int, geojson: dict, *, origem: str) -> dict:
+    """Grava nova versão do polígono (a anterior é mantida). Bloqueado depois da validação."""
+    p = buscar(con, "projeto", projeto_id)
+    _titular(con, usuario_id, p)
+    if ETAPAS.index(p["etapa"]) > ETAPAS.index("validacao"):
+        raise ErroNegocio("O polígono já foi validado e não pode mais ser alterado na plataforma. Uma mudança de "
+                          "área exige nova validação na certificadora.")
+    normal, avisos = geo.normalizar(geojson)
+    texto = json.dumps(normal, separators=(",", ":"))
+    sha = hashlib.sha256(texto.encode()).hexdigest()
+    with transacao(con):
+        atual = area_atual(con, projeto_id)
+        if atual and atual["sha256"] == sha:
+            return {"versao": atual["versao"], "area_ha": atual["area_ha"], "avisos": avisos, "inalterado": True}
+        r = geo.resumo(normal)
+        versao = (atual["versao"] if atual else 0) + 1
+        x0, y0, x1, y1 = r["limites"]
+        con.execute("""INSERT INTO projeto_area (projeto_id, versao, geojson, area_ha, sha256, origem,
+                       lon_min, lat_min, lon_max, lat_max, criado_por) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (projeto_id, versao, texto, r["area_ha"], sha, origem[:200], x0, y0, x1, y1, usuario_id))
+        registrar(con, usuario_id, "definir_area", "projeto", projeto_id,
+                  antes={"versao": atual["versao"], "area_ha": atual["area_ha"], "sha256": atual["sha256"]} if atual else None,
+                  depois={"versao": versao, "area_ha": r["area_ha"], "sha256": sha, "origem": origem[:200]})
+    return {"versao": versao, "area_ha": r["area_ha"], "avisos": avisos, "inalterado": False}
+
+
+def previa_area(con: sqlite3.Connection, usuario_id: int, projeto_id: int, geojson: dict) -> dict:
+    """Analisa o polígono sem gravar: o titular confere no mapa antes de salvar."""
+    p = buscar(con, "projeto", projeto_id)
+    _titular(con, usuario_id, p)
+    normal, avisos = geo.normalizar(geojson)
+    r = geo.resumo(normal)
+    u = buscar(con, "usuario", usuario_id)
+    sob = []
+    for s in sobreposicoes(con, projeto_id, normal):
+        if s.pop("titular_id") != u["organizacao_id"]:
+            s["nome"] = "Projeto de outra organização"
+        sob.append(s)
+    return {"geojson": normal, "area_ha": r["area_ha"], "partes": r["partes"], "avisos": avisos,
+            "alertas": alertas_area(con, p, normal, r["area_ha"]), "sobreposicoes": sob}
+
+
+def sobreposicoes(con: sqlite3.Connection, projeto_id: int, geojson: dict | None = None) -> list[dict]:
+    """Outros projetos cuja área atual cruza a deste (pré-filtro pelos limites, cálculo exato depois)."""
+    p = buscar(con, "projeto", projeto_id)
+    if geojson is None:
+        a = area_atual(con, projeto_id)
+        if not a:
+            return []
+        geojson = json.loads(a["geojson"])
+    r = geo.resumo(geojson)
+    x0, y0, x1, y1 = r["limites"]
+    out = []
+    for o in con.execute(
+            """SELECT pa.*, pr.tipo, pr.nome, pr.titular_id FROM projeto_area pa JOIN projeto pr ON pr.id = pa.projeto_id
+               WHERE pa.projeto_id <> ? AND pa.versao = (SELECT MAX(versao) FROM projeto_area WHERE projeto_id = pa.projeto_id)
+                 AND pa.lon_max >= ? AND pa.lon_min <= ? AND pa.lat_max >= ? AND pa.lat_min <= ?""",
+            (projeto_id, x0, x1, y0, y1)):
+        ha = geo.intersecao_ha(geojson, json.loads(o["geojson"]))
+        if ha < SOBREPOSICAO_MINIMA_HA:
+            continue
+        menor = min(r["area_ha"], o["area_ha"])
+        out.append({"projeto_id": o["projeto_id"], "nome": o["nome"], "tipo": o["tipo"], "titular_id": o["titular_id"],
+                    "sobreposicao_ha": round(ha, 4), "fracao_da_menor": round(ha / menor, 4),
+                    "mesmo_tipo": o["tipo"] == p["tipo"],
+                    "relevante": ha >= SOBREPOSICAO_RELEVANTE_HA or ha / menor >= SOBREPOSICAO_RELEVANTE_FRACAO})
+    return sorted(out, key=lambda s: -s["sobreposicao_ha"])
+
+
+def _ha(v: float) -> str:
+    """1234.5 -> '1.234,50 ha' (formato brasileiro)."""
+    return f"{v:,.2f}".translate(str.maketrans(",.", ".,")) + " ha"
+
+
+def alertas_area(con: sqlite3.Connection, p: sqlite3.Row, geojson: dict, area_ha: float) -> list[str]:
+    out = []
+    if p["area_ha"] and abs(area_ha - p["area_ha"]) / p["area_ha"] > DIFERENCA_AREA_ALERTA:
+        out.append(f"A área do polígono ({_ha(area_ha)}) difere em mais de 10% da área declarada "
+                   f"({_ha(p['area_ha'])}). Confira o arquivo ou corrija o cadastro.")
+    if not geo.contem_ponto(geojson, p["longitude"], p["latitude"]):
+        out.append("O ponto de localização do projeto está fora do polígono. Confira as coordenadas.")
+    return out
+
+
 def pendencias(con: sqlite3.Connection, projeto_id: int) -> list[str]:
     """O que impede o projeto de avançar para a próxima etapa."""
     p = buscar(con, "projeto", projeto_id)
@@ -182,7 +285,13 @@ def pendencias(con: sqlite3.Connection, projeto_id: int) -> list[str]:
             out.append("Anexar a ata da consulta livre, prévia e informada à comunidade (art. 47, I, a).")
         if p["tipo"] == "restauracao_psa" and p["natureza_area"] in AREAS_COMUNIDADES and not par:
             out.append("Registrar a parceria com a repartição dos créditos com a comunidade (art. 47, I, b).")
+    if idx >= ETAPAS.index("concepcao") and p["tipo"] in EXIGE_POLIGONO and not area_atual(con, projeto_id):
+        out.append("Delimitar o polígono da área do projeto (necessário no documento de concepção).")
     if idx >= ETAPAS.index("validacao"):
+        for s in sobreposicoes(con, projeto_id):
+            if s["mesmo_tipo"] and s["relevante"]:
+                out.append(f"Resolver a sobreposição de {s['sobreposicao_ha']:.2f} ha com o projeto nº {s['projeto_id']}, "
+                           "do mesmo tipo: a mesma área não pode gerar créditos duas vezes (dupla contagem).")
         if p["natureza_area"] in AREAS_PUBLICAS and not p["anuencia_ref"]:
             out.append("Registrar a anuência (ou comunicação) do órgão gestor da área (art. 49).")
         if par and par["assinatura"] != "assinado":
@@ -236,4 +345,26 @@ def ver(con: sqlite3.Connection, usuario_id: int, projeto_id: int) -> dict:
         raise NaoAutorizado("Projeto de outra organização.")
     itens = [dict(r) for r in con.execute("SELECT * FROM projeto_item WHERE projeto_id=? ORDER BY id", (projeto_id,))]
     return {**dict(p), "itens": itens, "parceria": dict(par) if par else None,
-            "pendencias": pendencias(con, projeto_id)}
+            "pendencias": pendencias(con, projeto_id), "area": _area_para_exibir(con, u, p)}
+
+
+def _area_para_exibir(con: sqlite3.Connection, u: sqlite3.Row, p: sqlite3.Row) -> dict | None:
+    a = area_atual(con, p["id"])
+    historico = [dict(r) for r in con.execute(
+        "SELECT versao, area_ha, origem, criado_em, sha256 FROM projeto_area WHERE projeto_id=? ORDER BY versao DESC",
+        (p["id"],))]
+    if not a:
+        return {"geojson": None, "historico": [], "alertas": [], "sobreposicoes": [],
+                "editavel": ETAPAS.index(p["etapa"]) <= ETAPAS.index("validacao")}
+    gj = json.loads(a["geojson"])
+    ve_tudo = u["papel"] in ("registrador", "auditor")
+    sob = []
+    for s in sobreposicoes(con, p["id"], gj):
+        if not (ve_tudo or s["titular_id"] == u["organizacao_id"]):
+            s["nome"] = "Projeto de outra organização"   # não revela dados de terceiros
+        s.pop("titular_id")
+        sob.append(s)
+    return {"geojson": gj, "versao": a["versao"], "area_ha": a["area_ha"], "origem": a["origem"],
+            "criado_em": a["criado_em"], "sha256": a["sha256"], "historico": historico,
+            "alertas": alertas_area(con, p, gj, a["area_ha"]), "sobreposicoes": sob,
+            "editavel": ETAPAS.index(p["etapa"]) <= ETAPAS.index("validacao")}

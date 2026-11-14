@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (acesso, anexos, antivirus, auditoria, compensacao, envio, faturas, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+from . import (acesso, anexos, antivirus, auditoria, compensacao, envio, faturas, geo, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
                terceirizadas)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar, transacao
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
@@ -371,6 +371,12 @@ class CodigoIn(BaseModel):
     codigo: str = Field(pattern=r"^\d{6}$")
 
 
+class AreaIn(BaseModel):
+    geojson: dict
+    origem: str | None = Field(default=None, max_length=200)
+    previa: bool = False
+
+
 class PreferenciasIn(BaseModel):
     avisos_email: bool
 
@@ -383,9 +389,21 @@ COOKIE = "carbonmg_sessao"
 LIVRES_DE_TERMOS = {"/eu", "/eu/termos", "/eu/dados", "/auth/logout", "/privacidade"}
 log = logging.getLogger("carbonmg")
 
+# Mapa: camada de fundo configurável (o padrão é o OpenStreetMap; em produção prefira um provedor
+# contratado ou o servidor de mapas do Estado). Só a origem dos ladrilhos entra na CSP.
+MAPA_TILES = os.environ.get("CARBONO_MAPA_TILES", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+MAPA_ATRIBUICAO = os.environ.get("CARBONO_MAPA_ATRIBUICAO", "© colaboradores do OpenStreetMap")
+
+
+def _origem_tiles(url: str) -> str:
+    from urllib.parse import urlsplit
+    partes = urlsplit(url.replace("{s}", "*"))
+    return f"{partes.scheme}://{partes.netloc}" if partes.scheme in ("https", "http") and partes.netloc else ""
+
+
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-       "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
-       "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
+       f"font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: {_origem_tiles(MAPA_TILES)}; "
+       "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
 
 
 # ---------------------------------------------------------------- aplicação
@@ -514,7 +532,8 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     # ---------------- acesso ----------------
     @app.get("/auth/config")
     def auth_config():
-        return {"modo": modo, "govbr": bool(acesso.config_govbr()), "termos_versao": acesso.TERMOS_VERSAO}
+        return {"modo": modo, "govbr": bool(acesso.config_govbr()), "termos_versao": acesso.TERMOS_VERSAO,
+                "mapa": {"tiles": MAPA_TILES, "atribuicao": MAPA_ATRIBUICAO}}
 
     def _exigir_producao():
         if not producao:
@@ -1168,6 +1187,42 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     def assinar(pid: int, d: AssinaturaIn, u=Depends(usuario), c=Depends(db)):
         projetos.assinar_parceria(c, u["id"], pid, **d.model_dump())
         return {"ok": True}
+
+    @app.put("/projetos/{pid}/area")
+    def definir_area(pid: int, d: AreaIn, u=Depends(usuario), c=Depends(db)):
+        """Polígono desenhado no mapa (GeoJSON). Com previa=true, só analisa."""
+        if d.previa:
+            return projetos.previa_area(c, u["id"], pid, d.geojson)
+        return projetos.definir_area(c, u["id"], pid, d.geojson, origem=d.origem or "desenho no mapa")
+
+    @app.post("/projetos/{pid}/area/arquivo")
+    async def importar_area(pid: int, previa: bool = True, arquivo: UploadFile = File(...), u=Depends(usuario),
+                            c=Depends(db)):
+        """Shapefile do CAR (.zip), KML, KMZ ou GeoJSON. Sem previa=false, só analisa."""
+        nome = arquivo.filename or "area"
+        conteudo = await arquivo.read(geo.MAX_ARQUIVO + 1)
+        if antivirus.obrigatorio() and antivirus.alvo():
+            ameaca = antivirus.examinar(conteudo)
+            if ameaca:
+                raise ErroNegocio(f"Arquivo bloqueado pelo antivírus ({ameaca}).")
+        bruto, avisos = geo.ler(nome, conteudo)
+        if previa:
+            r = projetos.previa_area(c, u["id"], pid, bruto)
+        else:
+            r = projetos.definir_area(c, u["id"], pid, bruto, origem=nome)
+        r["avisos"] = avisos + r["avisos"]
+        return r
+
+    @app.get("/projetos/{pid}/area.geojson")
+    def baixar_area(pid: int, u=Depends(usuario), c=Depends(db)):
+        p = projetos.ver(c, u["id"], pid)          # confere o acesso
+        a = p["area"]
+        if not a or not a["geojson"]:
+            raise HTTPException(404, "Projeto sem polígono.")
+        corpo = geo.feature_collection(a["geojson"], {"projeto": p["nome"], "versao": a["versao"],
+                                                      "area_ha": a["area_ha"], "sha256": a["sha256"]})
+        return Response(json.dumps(corpo, ensure_ascii=False), media_type="application/geo+json",
+                        headers={"Content-Disposition": f'attachment; filename="projeto-{pid}-area-v{a["versao"]}.geojson"'})
 
     @app.post("/projetos/{pid}/avanco")
     def avancar(pid: int, u=Depends(usuario), c=Depends(db)):

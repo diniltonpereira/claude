@@ -179,13 +179,17 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
     # ------------------------------------------------ projeto de geração da prefeitura (fase 3)
     proj = projetos.criar(c, elab, nome="Captação de biogás do aterro municipal", tipo="biogas",
                           natureza_area="publica_propria", municipio="Vale Verde", uf="MG", latitude=-16.73,
-                          longitude=-43.86, area_ha=12.5, matricula="Matrícula 12.345 (fictícia)",
+                          longitude=-43.86, area_ha=15.7, matricula="Matrícula 12.345 (fictícia)",
                           linha_base="Metano do aterro liberado por drenos passivos, sem captação nem queima.",
                           estimativa_tco2e_ano=5_000)
     projetos.registrar_parceria(c, elab, proj, desenvolvedor_cnpj="77777777000191",
                                 desenvolvedor_nome="BioEnergia Desenvolvimento Ltda. (fictícia)",
                                 percentual_titular=60, percentual_desenvolvedor=40,
                                 licitacao_ref=f"Concorrência 3/{hoje.year} (fictícia)")
+    # contorno do aterro (fictício, ~15,7 ha), como se desenhado no mapa
+    projetos.definir_area(c, elab, proj, {"type": "Polygon", "coordinates": [[
+        [-43.8619, -16.7316], [-43.8580, -16.7318], [-43.8576, -16.7290], [-43.8601, -16.7281],
+        [-43.8622, -16.7293], [-43.8619, -16.7316]]]}, origem="desenho no mapa")
     for _ in range(2):  # ideia > viabilidade > concepção
         etapa = c.execute("SELECT etapa FROM projeto WHERE id=?", (proj,)).fetchone()[0]
         for it in c.execute("SELECT id, item FROM projeto_item WHERE projeto_id=? AND etapa=?", (proj, etapa)).fetchall():

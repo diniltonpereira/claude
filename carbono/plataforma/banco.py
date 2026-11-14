@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 9
+VERSAO_ESQUEMA = 10
 VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
@@ -409,6 +409,28 @@ CREATE TABLE IF NOT EXISTS projeto (
     criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- Polígono da área (versão 10). Versionado: cada alteração é uma linha nova e nenhuma é apagada,
+-- para a validação e a auditoria saberem qual contorno valia em cada momento.
+CREATE TABLE IF NOT EXISTS projeto_area (
+    id              INTEGER PRIMARY KEY,
+    projeto_id      INTEGER NOT NULL REFERENCES projeto(id),
+    versao          INTEGER NOT NULL CHECK (versao >= 1),
+    geojson         TEXT NOT NULL CHECK (json_valid(geojson) AND json_extract(geojson, '$.type') = 'MultiPolygon'),
+    area_ha         REAL NOT NULL CHECK (area_ha > 0),
+    sha256          TEXT NOT NULL,
+    origem          TEXT NOT NULL,          -- "desenho no mapa" ou o nome do arquivo importado
+    -- limites para pré-filtrar sobreposições
+    lon_min REAL NOT NULL, lat_min REAL NOT NULL, lon_max REAL NOT NULL, lat_max REAL NOT NULL,
+    criado_por      INTEGER NOT NULL REFERENCES usuario(id),
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE (projeto_id, versao)
+);
+CREATE INDEX IF NOT EXISTS projeto_area_limites ON projeto_area (lon_min, lon_max, lat_min, lat_max);
+CREATE TRIGGER IF NOT EXISTS projeto_area_sem_update BEFORE UPDATE ON projeto_area
+BEGIN SELECT RAISE(ABORT, 'versão de área é imutável: grave uma nova versão'); END;
+CREATE TRIGGER IF NOT EXISTS projeto_area_sem_delete BEFORE DELETE ON projeto_area
+BEGIN SELECT RAISE(ABORT, 'versão de área é imutável'); END;
+
 CREATE TABLE IF NOT EXISTS projeto_item (
     id              INTEGER PRIMARY KEY,
     projeto_id      INTEGER NOT NULL REFERENCES projeto(id),
@@ -565,7 +587,7 @@ def _migrar_8_para_9(con: sqlite3.Connection) -> None:
 
 # Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
 # próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
-MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9}
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9, 9: None}
 
 
 def migrar(con: sqlite3.Connection, caminho: str = "") -> int:

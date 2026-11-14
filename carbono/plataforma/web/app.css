@@ -272,3 +272,17 @@ details summary { cursor: pointer; color: var(--mata); font-size: .9rem; margin:
   * { transition: none !important; animation: none !important; }
   .carimbo { transform: none; }
 }
+
+/* ---------------------------------------------------------------- mapa da área do projeto */
+.mapa { height: 360px; border: 1px solid var(--linha); border-radius: var(--raio); margin-bottom: 1rem;
+  background: var(--mata-fundo); z-index: 0; }
+.mapa.desenhando { cursor: crosshair; outline: 2px solid var(--foco); outline-offset: 2px; }
+.mapa.desenhando .leaflet-interactive { cursor: crosshair; }
+.arquivo-area { display: grid; gap: .3rem; margin: .75rem 0; max-width: 40rem; }
+.barra-desenho { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .75rem 0;
+  padding: .6rem .75rem; border-radius: var(--raio); background: var(--papel); border: 1px solid var(--linha); }
+.barra-desenho > span { flex: 1 1 12rem; }
+.previa { margin-top: 1rem; padding: 1rem; border: 1px dashed var(--ambar); border-radius: var(--raio); background: var(--ambar-fundo); }
+.previa h3 { margin-top: 0; }
+.leaflet-container { font: inherit; }
+@media (max-width: 640px) { .mapa { height: 280px; } }

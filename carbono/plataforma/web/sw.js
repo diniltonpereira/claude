@@ -8,11 +8,11 @@
  * - Ao sair da conta, o app apaga o cache de consultas (LIMPAR_DADOS).
  */
 "use strict";
-const VERSAO = "carbonmg-v9";
+const VERSAO = "carbonmg-v10";
 const CACHE_APP = `${VERSAO}-app`;
 const CACHE_API = "carbonmg-api";
-const APP = ["./", "index.html", "app.css", "app.js", "offline.js", "manifest.webmanifest",
-  "icone-192.png", "icone-512.png", "icone-maskable-512.png"];
+const APP = ["./", "index.html", "app.css", "app.js", "offline.js", "mapa.js", "manifest.webmanifest",
+  "icone-192.png", "icone-512.png", "icone-maskable-512.png", "vendor/leaflet/leaflet.js", "vendor/leaflet/leaflet.css"];
 const LEITURA_OFFLINE = [
   /^\/auth\/config$/, /^\/eu$/, /^\/fatores$/, /^\/sbce\/calendario$/,
   /^\/inventarios(\/\d+)?$/, /^\/contratos(\/\d+)?$/, /^\/organizacoes\/\d+\/instalacoes$/,

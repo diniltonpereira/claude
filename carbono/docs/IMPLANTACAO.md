@@ -204,3 +204,22 @@ Nesse modo, a entrada é pelo número do usuário (cabeçalho `X-Usuario-Id`), s
 - **Acompanhamento:** em **Cadastros**, a seção "E-mails enviados pela plataforma" mostra fila, enviados e falhas, com o motivo. Corrija o e-mail do usuário e use "Tentar de novo". O conteúdo não aparece nessa tela, e o link do convite é apagado do banco assim que o e-mail é entregue.
 - **Sem SMTP configurado:** nada se perde. O convite continua mostrando o link para envio manual, e a fila sai quando o SMTP for configurado. Os lembretes e alertas também continuam visíveis na página do contrato.
 - **Teste local:** `docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit` e `CARBONO_SMTP_HOST=127.0.0.1`, `CARBONO_SMTP_PORTA=1025`, `CARBONO_SMTP_SEGURANCA=nenhuma`. As mensagens aparecem em http://127.0.0.1:8025.
+
+## 11. Mapa e polígono da área dos projetos
+
+- **Como delimitar:** na página do projeto, em "Área do projeto", desenhe no mapa (cada clique marca um vértice) ou importe o arquivo. Antes de salvar, a plataforma mostra a área calculada, a diferença para a área declarada, se o ponto de localização ficou fora e as sobreposições com outros projetos.
+- **Arquivos aceitos:**
+  - shapefile do CAR (o .zip baixado do SICAR, com `.shp`, `.shx`, `.dbf` e `.prj`);
+  - KML e KMZ (Google Earth);
+  - GeoJSON.
+  
+  As coordenadas devem ser geográficas (SIRGAS 2000 ou WGS 84). Arquivo em UTM é recusado com a orientação para exportar de novo.
+- **Versões:** cada alteração grava uma versão nova (com SHA-256) e as anteriores ficam no histórico e na trilha de auditoria. Depois da validação, o polígono não muda mais na plataforma.
+- **Regras:**
+  - restauração florestal e PSA precisam do polígono para entrar no documento de concepção;
+  - sobreposição com outro projeto **do mesmo tipo**, a partir de 1 ha ou de 1% da menor área, impede a validação (dupla contagem);
+  - sobreposições menores (ajuste de divisa) e com projetos de outro tipo só aparecem como informação;
+  - para quem não é do órgão, o projeto vizinho aparece só pelo número, sem o nome.
+- **Área calculada:** é uma conferência, com erro típico abaixo de 0,5%. A área oficial continua sendo a do CAR, da matrícula ou do levantamento georreferenciado.
+- **Fundo do mapa:** o padrão é o OpenStreetMap, adequado ao piloto pela política de uso justo do OSM. Em produção, configure `CARBONO_MAPA_TILES` com um provedor contratado ou com o servidor de mapas do Estado (modelo XYZ, `{z}/{x}/{y}`). Imagem de satélite ajuda a desenhar a área, mas confira a licença do provedor. Sem acesso ao fundo, o polígono continua aparecendo sobre fundo liso.
+- **Acessibilidade:** desenhar exige mouse ou toque; a importação do arquivo é o caminho equivalente para quem usa teclado ou leitor de tela.

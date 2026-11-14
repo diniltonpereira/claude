@@ -1432,6 +1432,7 @@ async function telaProjeto(id) {
     <section class="bloco"><h2>Para avançar</h2>
       ${p.pendencias.length && p.etapa !== "venda" ? `<ul class="alertas">${p.pendencias.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : p.etapa === "venda" ? `<p>Projeto na etapa de venda. Os créditos podem ser ofertados no catálogo pelo vendedor credenciado.</p>` : `<p>Sem pendências.</p>`}
       ${titular && p.etapa !== "venda" ? `<button type="button" class="botao" id="b-avancar"${p.pendencias.length ? " disabled" : ""}>Avançar para ${esc(regras.etapas[idx + 1].nome)}</button>` : ""}</section>
+    ${secaoArea(p, titular)}
     <div class="colunas">
       <section class="bloco"><h2>Checklist: ${esc(regras.etapas[idx].nome)}</h2>
         ${itensAtuais.length ? `<ul class="obrigacoes">${itensAtuais.map((it) => `<li><strong>${esc(it.item)}</strong>
@@ -1471,6 +1472,7 @@ async function telaProjeto(id) {
         <div class="acoes largo"><button type="submit" class="botao secundario">Registrar parceria</button></div><p class="erro-campo largo"></p></form>`
       : `<p class="vazio">Sem parceria.</p>`}</section>`;
   const recarregar = () => telaProjeto(id);
+  ligarArea(p, titular, recarregar);
   conteudo.querySelectorAll("[data-baixar]").forEach((b) => (b.onclick = () => baixar(`/anexos/${b.dataset.baixar}`, b.dataset.nome).catch((e) => avisar(e.message, true))));
   conteudo.querySelectorAll(".f-item").forEach((f) => aoEnviar(f, async (d, form) => {
     const anexo = await anexoDoCampo(form);
@@ -1487,6 +1489,103 @@ async function telaProjeto(id) {
   if (ba) ba.onclick = async () => {
     try { const r = await api("POST", `/projetos/${id}/avanco`); avisar(`Projeto avançou para ${regras.etapas.find((e) => e.codigo === r.etapa).nome}.`); recarregar(); }
     catch (e) { avisar(e.message, true); }
+  };
+}
+
+// ---------------------------------------------------------------- área do projeto (polígono)
+const ha = (v) => `${t(v)} ha`;
+function listaAnalise({ avisos = [], alertas = [], sobreposicoes = [] }) {
+  const sob = sobreposicoes.map((s) => `${s.relevante && s.mesmo_tipo ? "<strong>Impede a validação:</strong> " : ""}sobrepõe ${ha(s.sobreposicao_ha)} (${t(s.fracao_da_menor * 100)}% da menor área) do projeto nº ${s.projeto_id}, ${esc(s.nome)}${s.mesmo_tipo ? ", do mesmo tipo" : ", de outro tipo"}${s.relevante ? "" : " — provável ajuste de divisa"}.`);
+  const itens = [...avisos, ...alertas].map(esc).concat(sob);
+  return itens.length ? `<ul class="alertas">${itens.map((x) => `<li>${x}</li>`).join("")}</ul>` : "";
+}
+
+function secaoArea(p, titular) {
+  const a = p.area || { geojson: null, historico: [], editavel: true };
+  const editar = titular && a.editavel;
+  return `<section class="bloco" id="s-area"><h2>Área do projeto</h2>
+    <div class="mapa" id="mapa" role="region" aria-label="Mapa com o polígono da área do projeto"></div>
+    ${a.geojson ? `<p><strong>${ha(a.area_ha)}</strong> no polígono · versão ${a.versao} · ${esc(a.origem)} · ${data(a.criado_em)}
+        ${p.area_ha ? ` · área declarada ${ha(p.area_ha)}` : ""} · <button type="button" class="link" id="b-geojson">baixar GeoJSON</button></p>
+      ${listaAnalise(a)}
+      ${a.historico.length > 1 ? `<details><summary>Versões anteriores (${a.historico.length - 1})</summary><ul class="memoria">
+        ${a.historico.slice(1).map((h) => `<li>Versão ${h.versao}: ${ha(h.area_ha)} · ${esc(h.origem)} · ${data(h.criado_em)} · <span class="mono">${esc(h.sha256.slice(0, 12))}</span></li>`).join("")}</ul></details>` : ""}`
+      : `<p class="vazio">Polígono ainda não delimitado.${p.tipo === "restauracao_psa" ? " Ele é obrigatório para o documento de concepção." : ""}</p>`}
+    ${editar ? `<div id="area-edicao">
+        <div class="acoes"><button type="button" class="botao secundario" id="b-desenhar">${a.geojson ? "Redesenhar no mapa" : "Desenhar no mapa"}</button></div>
+        <label class="arquivo-area">Ou importe o arquivo da área
+          <span class="ajuda">Shapefile do CAR (.zip com .shp, .shx, .dbf e .prj), KML, KMZ ou GeoJSON, em coordenadas geográficas (SIRGAS 2000 ou WGS 84)</span>
+          <input type="file" id="i-area" accept=".zip,.kml,.kmz,.geojson,.json"></label>
+        <div id="barra-desenho" class="barra-desenho" hidden><span id="n-pontos" aria-live="polite">Clique no mapa para marcar os vértices.</span>
+          <button type="button" class="botao secundario" id="b-desfazer" disabled>Desfazer ponto</button>
+          <button type="button" class="botao" id="b-concluir" disabled>Concluir desenho</button>
+          <button type="button" class="link" id="b-cancelar">Cancelar</button></div>
+        <div id="previa" class="previa" hidden></div></div>`
+      : titular && a.geojson ? `<p class="memoria">O polígono já foi validado e não muda mais na plataforma; uma alteração de área exige nova validação na certificadora.</p>` : ""}
+  </section>`;
+}
+
+async function ligarArea(p, titular, recarregar) {
+  const el = $("#mapa");
+  if (!el) return;
+  const a = p.area || {};
+  let mapa;
+  try {
+    mapa = await CarbonMapa.abrir(el, { fundo: estado.mapa?.tiles, atribuicao: estado.mapa?.atribuicao,
+      ponto: [p.longitude, p.latitude], area: a.geojson });
+  } catch (e) { el.innerHTML = `<p class="vazio">${esc(e.message)}</p>`; return; }
+  const bg = $("#b-geojson");
+  if (bg) bg.onclick = () => baixar(`/projetos/${p.id}/area.geojson`, `projeto-${p.id}-area.geojson`).catch((e) => avisar(e.message, true));
+  if (!$("#area-edicao")) return;
+
+  const previa = $("#previa"), barra = $("#barra-desenho"), bDes = $("#b-desenhar");
+  function fecharPrevia() { previa.hidden = true; previa.innerHTML = ""; mapa.mostrarPrevia(null); mapa.enquadrar(); }
+  function mostrarPrevia(r, origem) {
+    mapa.mostrarPrevia(r.geojson);
+    previa.hidden = false;
+    previa.innerHTML = `<h3>Confira antes de salvar</h3>
+      <p><strong>${ha(r.area_ha)}</strong>${r.partes > 1 ? ` em ${r.partes} partes` : ""} · ${esc(origem)}${p.area_ha ? ` · área declarada ${ha(p.area_ha)}` : ""}</p>
+      ${listaAnalise(r)}
+      <p class="memoria">Em tracejado, a área nova${a.geojson ? "; em verde, a versão atual, que fica guardada no histórico" : ""}.</p>
+      <div class="acoes"><button type="button" class="botao" id="b-salvar-area">Salvar como versão ${(a.versao || 0) + 1}</button>
+        <button type="button" class="botao secundario" id="b-descartar">Descartar</button></div>`;
+    $("#b-descartar").onclick = fecharPrevia;
+    $("#b-salvar-area").onclick = async (ev) => {
+      ev.target.disabled = true;
+      try {
+        const s = await api("PUT", `/projetos/${p.id}/area`, { geojson: r.geojson, origem });
+        avisar(s.inalterado ? "O polígono é igual à versão atual; nada mudou." : `Área salva (versão ${s.versao}).`);
+        recarregar();
+      } catch (e) { ev.target.disabled = false; avisar(e.message, true); }
+    };
+    previa.scrollIntoView({ block: "nearest" });
+  }
+
+  bDes.onclick = () => {
+    fecharPrevia(); barra.hidden = false; bDes.disabled = true;
+    mapa.iniciarDesenho((n) => {
+      $("#n-pontos").textContent = n ? `${n} ponto${n > 1 ? "s" : ""} marcado${n > 1 ? "s" : ""}.` : "Clique no mapa para marcar os vértices.";
+      $("#b-desfazer").disabled = n === 0; $("#b-concluir").disabled = n < 3;
+    });
+  };
+  const encerrar = () => { mapa.encerrarDesenho(); barra.hidden = true; bDes.disabled = false; };
+  $("#b-desfazer").onclick = () => mapa.desfazer();
+  $("#b-cancelar").onclick = encerrar;
+  $("#b-concluir").onclick = async () => {
+    const g = mapa.desenhoGeojson();
+    try { const r = await api("PUT", `/projetos/${p.id}/area`, { geojson: g, previa: true }); encerrar(); mostrarPrevia(r, "desenho no mapa"); }
+    catch (e) { avisar(e.message, true); }
+  };
+  $("#i-area").onchange = async (ev) => {
+    const arq = ev.target.files[0];
+    if (!arq) return;
+    const fd = new FormData(); fd.append("arquivo", arq);
+    try {
+      const resp = await buscarRede(`/projetos/${p.id}/area/arquivo`, { method: "POST", headers: cabecalhos(false), body: fd });
+      if (!resp.ok) throw await lerErro(resp);
+      encerrar(); mostrarPrevia(await resp.json(), arq.name);
+    } catch (e) { avisar(e.message, true); }
+    ev.target.value = "";
   };
 }
 
@@ -1600,7 +1699,7 @@ window.addEventListener("unhandledrejection", (ev) => {
 (async function iniciar() {
   try {
     const cfg = await (await fetch("/auth/config")).json();
-    Object.assign(estado, { modo: cfg.modo, govbr: cfg.govbr, termosVersao: cfg.termos_versao });
+    Object.assign(estado, { modo: cfg.modo, govbr: cfg.govbr, termosVersao: cfg.termos_versao, mapa: cfg.mapa || null });
   } catch { /* mantém produção */ }
   if (producao()) {
     try { await carregarSessao(); } catch { estado.eu = null; }

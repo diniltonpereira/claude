@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from plataforma import acesso, envio, terceirizadas
-from plataforma.banco import ErroNegocio, conectar
+from plataforma.banco import VERSAO_ESQUEMA, ErroNegocio, conectar
 
 from .test_carbonmg import _anexos, ct, lancar_meses, s  # noqa: F401 — fixtures reaproveitadas
 from .test_producao import SENHA, entrar, prod  # noqa: F401
@@ -238,7 +238,7 @@ def test_migra_banco_da_versao_8(tmp_path):
     c.execute("PRAGMA user_version = 8")
     c.close()
     c = conectar(caminho)
-    assert c.execute("PRAGMA user_version").fetchone()[0] == 9
+    assert c.execute("PRAGMA user_version").fetchone()[0] == VERSAO_ESQUEMA
     uid = c.execute("INSERT INTO usuario (nome,papel) VALUES ('X','fiscal')").lastrowid
     assert c.execute("SELECT avisos_email FROM usuario WHERE id=?", (uid,)).fetchone()[0] == 1
     assert c.execute("SELECT COUNT(*) FROM email_saida").fetchone()[0] == 0

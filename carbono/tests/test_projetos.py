@@ -31,6 +31,13 @@ def s(tmp_path):
     return d
 
 
+def quadrado(lon, lat, lado=0.01):
+    """Quadrado centrado em (lon, lat); lado de 0,01 grau ≈ 1,1 km."""
+    return {"type": "Polygon", "coordinates": [[[lon - lado / 2, lat - lado / 2], [lon + lado / 2, lat - lado / 2],
+                                                [lon + lado / 2, lat + lado / 2], [lon - lado / 2, lat + lado / 2],
+                                                [lon - lado / 2, lat - lado / 2]]]}
+
+
 def pdf(c, uid, nome="ev"):
     return anexos.salvar(c, uid, f"{nome}.pdf", "application/pdf", PDF + nome.encode())["id"]
 
@@ -123,6 +130,8 @@ def test_comunidade_exige_consulta_e_repartição_minima(s):
     pj.registrar_parceria(c, s["quilombo"], pid, desenvolvedor_cnpj="66666666000191", desenvolvedor_nome="Dev",
                           percentual_titular=0, percentual_desenvolvedor=45, percentual_comunidade=55)
     pj.atualizar(c, s["quilombo"], pid, consulta_anexo_id=pdf(c, s["quilombo"], "ata"))
+    assert any("polígono" in p for p in pj.pendencias(c, pid))       # restauração exige a área delimitada
+    pj.definir_area(c, s["quilombo"], pid, quadrado(-43.86, -16.73), origem="desenho no mapa")
     assert pj.avancar(c, s["quilombo"], pid) == "concepcao"
     concluir_etapa(s, "quilombo", pid)
     pend = pj.pendencias(c, pid)
