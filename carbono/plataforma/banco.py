@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS usuario (
     nome            TEXT NOT NULL,
     papel           TEXT NOT NULL CHECK (papel IN ('elaborador','verificador','moderador','registrador')),
     organizacao_id  INTEGER REFERENCES organizacao(id),
-    ovv_credenciado INTEGER NOT NULL DEFAULT 0 CHECK (ovv_credenciado IN (0,1))
+    -- Organismo de inspeção acreditado (Lei 15.042/2024, art. 32, parágrafo único)
+    acreditado      INTEGER NOT NULL DEFAULT 0 CHECK (acreditado IN (0,1))
 );
 
 CREATE TABLE IF NOT EXISTS inventario (
@@ -44,6 +45,8 @@ CREATE TABLE IF NOT EXISTS atividade (
     inventario_id   INTEGER NOT NULL REFERENCES inventario(id),
     descricao       TEXT NOT NULL,
     escopo          INTEGER NOT NULL CHECK (escopo IN (1,2,3)),
+    -- remoção por sumidouro: entra nas emissões líquidas (art. 2º, XI; art. 1º, § 4º)
+    natureza        TEXT NOT NULL DEFAULT 'emissao' CHECK (natureza IN ('emissao','remocao')),
     origem          TEXT NOT NULL,          -- código do fator ou 'gas:<nome>'
     quantidade      REAL NOT NULL CHECK (quantidade >= 0),
     tco2e           REAL NOT NULL CHECK (tco2e >= 0),
@@ -79,12 +82,13 @@ CREATE TABLE IF NOT EXISTS lote (
     safra           INTEGER NOT NULL,      -- ano da redução/remoção (vintage)
     quantidade      INTEGER NOT NULL CHECK (quantidade > 0),
     conta_id        INTEGER REFERENCES conta(id),
-    status          TEXT NOT NULL CHECK (status IN ('ativo','aposentado','cancelado')),
+    -- cancelamento = anulação para comprovar compromisso (art. 2º, II; art. 45)
+    status          TEXT NOT NULL CHECK (status IN ('ativo','cancelado')),
     lote_origem_id  INTEGER REFERENCES lote(id),
     beneficiario    TEXT,
-    finalidade      TEXT CHECK (finalidade IN ('compensacao_voluntaria','conciliacao_sbce','cancelamento')),
+    finalidade      TEXT CHECK (finalidade IN ('compensacao_voluntaria','conciliacao_sbce','invalidacao')),
     inventario_id   INTEGER REFERENCES inventario(id),
-    CHECK (status = 'ativo' OR finalidade IS NOT NULL)
+    CHECK ((status = 'ativo') = (finalidade IS NULL))
 );
 CREATE INDEX IF NOT EXISTS ix_lote_conta ON lote(conta_id, status);
 CREATE INDEX IF NOT EXISTS ix_lote_inventario ON lote(inventario_id);
@@ -92,7 +96,7 @@ CREATE INDEX IF NOT EXISTS ix_lote_inventario ON lote(inventario_id);
 -- Livro-razão append-only com encadeamento de hashes (auditoria / TCU / CGU).
 CREATE TABLE IF NOT EXISTS movimento (
     id              INTEGER PRIMARY KEY,
-    tipo            TEXT NOT NULL CHECK (tipo IN ('emissao','transferencia','aposentadoria','cancelamento')),
+    tipo            TEXT NOT NULL CHECK (tipo IN ('emissao','transferencia','cancelamento')),
     lote_id         INTEGER NOT NULL REFERENCES lote(id),
     quantidade      INTEGER NOT NULL CHECK (quantidade > 0),
     de_conta        INTEGER REFERENCES conta(id),

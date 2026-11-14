@@ -7,7 +7,8 @@ Fluxo:
 
 Segregação de funções (controle interno, Lei 14.133/2021, art. 7º, §1º):
 - quem elabora não verifica nem modera;
-- o verificador precisa ser OVV credenciado e não pode pertencer à organização inventariada;
+- o verificador precisa ser organismo de inspeção acreditado (Lei 15.042/2024, art. 32,
+  parágrafo único) e não pode pertencer à organização inventariada (independência, art. 44, II);
 - o moderador não pode ter elaborado nem verificado o mesmo inventário.
 """
 from __future__ import annotations
@@ -46,7 +47,10 @@ def criar_inventario(con: sqlite3.Connection, usuario_id: int, organizacao_id: i
 def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id: int, *,
                         descricao: str, quantidade: float, fator: str | None = None,
                         gas: str | None = None, escopo: int = 1,
-                        fracao_biogenica: float | None = None, evidencia: str | None = None) -> int:
+                        fracao_biogenica: float | None = None, evidencia: str | None = None,
+                        remocao: bool = False) -> int:
+    """Lança uma atividade. `remocao=True` registra remoção por sumidouro (só por gás, em
+    massa de CO2 removida), que reduz as emissões líquidas (art. 2º, XI; art. 1º, § 4º)."""
     inv = buscar(con, "inventario", inventario_id)
     u = buscar(con, "usuario", usuario_id)
     if u["papel"] != "elaborador" or u["organizacao_id"] != inv["organizacao_id"]:
@@ -55,6 +59,8 @@ def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id:
         raise ErroNegocio(f"Inventário em '{inv['status']}' não aceita alterações.")
     if (fator is None) == (gas is None):
         raise ErroNegocio("Informe exatamente um: 'fator' ou 'gas'.")
+    if remocao and gas != "CO2":
+        raise ErroNegocio("Remoções são lançadas como massa de CO2 removida (gas='CO2').")
     try:
         if fator:
             r = calcular_por_fator(fator, quantidade, fracao_biogenica)
@@ -65,10 +71,10 @@ def adicionar_atividade(con: sqlite3.Connection, usuario_id: int, inventario_id:
     except ValueError as exc:
         raise ErroNegocio(str(exc)) from exc
     cur = con.execute(
-        """INSERT INTO atividade (inventario_id, descricao, escopo, origem, quantidade, tco2e,
-           tco2_biogenico, memoria, evidencia) VALUES (?,?,?,?,?,?,?,?,?)""",
-        (inventario_id, descricao, r.escopo, origem, quantidade, r.tco2e, r.tco2_biogenico,
-         r.memoria, evidencia))
+        """INSERT INTO atividade (inventario_id, descricao, escopo, natureza, origem, quantidade,
+           tco2e, tco2_biogenico, memoria, evidencia) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (inventario_id, descricao, r.escopo, "remocao" if remocao else "emissao", origem, quantidade,
+         r.tco2e, r.tco2_biogenico, ("REMOÇÃO: " if remocao else "") + r.memoria, evidencia))
     return cur.lastrowid
 
 
@@ -76,7 +82,10 @@ def totais(con: sqlite3.Connection, inventario_id: int) -> dict:
     buscar(con, "inventario", inventario_id)
     linhas = con.execute(
         """SELECT escopo, COALESCE(SUM(tco2e),0) t, COALESCE(SUM(tco2_biogenico),0) b
-           FROM atividade WHERE inventario_id = ? GROUP BY escopo""", (inventario_id,)).fetchall()
+           FROM atividade WHERE inventario_id = ? AND natureza = 'emissao' GROUP BY escopo""",
+        (inventario_id,)).fetchall()
+    remocoes = con.execute("SELECT COALESCE(SUM(tco2e),0) FROM atividade WHERE inventario_id=? "
+                           "AND natureza='remocao'", (inventario_id,)).fetchone()[0]
     por = {f"escopo{e}": 0.0 for e in (1, 2, 3)}
     bio = 0.0
     for l in linhas:
@@ -84,6 +93,9 @@ def totais(con: sqlite3.Connection, inventario_id: int) -> dict:
         bio += l["b"]
     por["total"] = round(sum(por[f"escopo{e}"] for e in (1, 2, 3)), 6)
     por["co2_biogenico"] = round(bio, 6)
+    por["remocoes"] = round(remocoes, 6)
+    # Emissões líquidas do escopo 1: base da conciliação periódica (art. 2º, V e XI; art. 34).
+    por["escopo1_liquido"] = round(max(por["escopo1"] - remocoes, 0.0), 6)
     return por
 
 
@@ -123,8 +135,9 @@ def _checar_segregacao(con, u, inv, acao) -> None:
     if u["id"] == inv["elaborado_por"]:
         raise NaoAutorizado("Quem elaborou não pode verificar nem moderar.")
     if u["papel"] == "verificador":
-        if not u["ovv_credenciado"]:
-            raise NaoAutorizado("Verificador precisa ser OVV credenciado.")
+        if not u["acreditado"]:
+            raise NaoAutorizado("Verificador precisa ser organismo de inspeção acreditado "
+                                "(Lei 15.042/2024, art. 32, parágrafo único).")
         if u["organizacao_id"] == inv["organizacao_id"]:
             raise NaoAutorizado("Verificador não pode pertencer à organização inventariada.")
         if acao != "assumir" and inv["verificado_por"] != u["id"]:

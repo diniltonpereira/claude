@@ -7,12 +7,15 @@ from plataforma import compensacao, mrv, registro
 from plataforma.api import criar_app
 from plataforma.banco import ErroNegocio, NaoAutorizado, conectar
 from plataforma.calculo import calcular_por_fator, calcular_por_gas
-from plataforma.enquadramento import enquadrar, faixa_sbce
+from datetime import date
+
+from plataforma.enquadramento import (checar_projeto_publico, checar_reparticao_comunidade,
+                                     enquadrar, faixa_sbce, fase_em)
 
 
 @pytest.fixture
 def cen(tmp_path):
-    """Cenário mínimo: órgão público, OVV, moderador, gerador de créditos."""
+    """Cenário mínimo: órgão público, organismo acreditado, moderador, gerador de créditos."""
     c = conectar(str(tmp_path / "t.db"))
     ins = lambda sql, *a: c.execute(sql, a).lastrowid  # noqa: E731
     s = {"c": c}
@@ -21,7 +24,7 @@ def cen(tmp_path):
     s["ovv"] = ins("INSERT INTO organizacao (nome,cnpj,tipo) VALUES ('OVV','44444444000191','empresa')")
     s["ger"] = ins("INSERT INTO organizacao (nome,cnpj,tipo) VALUES ('Flor','33333333000191','concessao_florestal')")
     s["elab"] = ins("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('E','elaborador',?)", s["org"])
-    s["verif"] = ins("INSERT INTO usuario (nome,papel,organizacao_id,ovv_credenciado) VALUES ('V','verificador',?,1)", s["ovv"])
+    s["verif"] = ins("INSERT INTO usuario (nome,papel,organizacao_id,acreditado) VALUES ('V','verificador',?,1)", s["ovv"])
     s["mod"] = ins("INSERT INTO usuario (nome,papel) VALUES ('M','moderador')")
     s["gger"] = ins("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('G','elaborador',?)", s["ger"])
     s["conta_org"] = registro.abrir_conta(c, s["org"])
@@ -97,7 +100,7 @@ def test_elaborador_nao_verifica(cen):
 
 def test_verificador_da_propria_organizacao_e_barrado(cen):
     c = cen["c"]
-    interno = c.execute("INSERT INTO usuario (nome,papel,organizacao_id,ovv_credenciado) "
+    interno = c.execute("INSERT INTO usuario (nome,papel,organizacao_id,acreditado) "
                         "VALUES ('I','verificador',?,1)", (cen["org"],)).lastrowid
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
     mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
@@ -131,9 +134,9 @@ def test_falha_na_transicao_nao_deixa_rastro(cen):
 # ---------------- Registro ----------------
 def test_nao_gasta_duas_vezes(cen):
     lote = emitir(cen, qtd=100)
-    registro.aposentar(cen["c"], cen["gger"], lote_id=lote, quantidade=100,
-                       finalidade="compensacao_voluntaria", beneficiario="X")
-    with pytest.raises(ErroNegocio, match="aposentado"):
+    registro.cancelar(cen["c"], cen["gger"], lote_id=lote, quantidade=100,
+                      finalidade="compensacao_voluntaria", beneficiario="X")
+    with pytest.raises(ErroNegocio, match="cancelado"):
         registro.transferir(cen["c"], cen["gger"], lote_id=lote, quantidade=1, para_conta=cen["conta_org"])
 
 
@@ -200,16 +203,116 @@ def test_safra_futura_ou_antiga_nao_e_elegivel(cen):
         compensacao.compensar(cen["c"], cen["elab"], inv)
 
 
-def test_cbe_nao_serve_para_compensacao_voluntaria_e_crve_tem_teto_na_conciliacao(cen):
-    inv = inventario_aprovado(cen)
-    emitir(cen, qtd=10, tipo="CBE", serial="CBE-1", conta=cen["conta_org"])
+def test_compensacao_voluntaria_aceita_ativos_do_sbce_art45(cen):
+    inv = inventario_aprovado(cen)  # 24 unidades
+    emitir(cen, qtd=10, tipo="CRVE", serial="CRVE-1", conta=cen["conta_org"])
+    emitir(cen, qtd=50, tipo="CBE", safra=2025, serial="CBE-1", conta=cen["conta_org"])
+    r = compensacao.compensar(cen["c"], cen["elab"], inv, simular=True)
+    assert [(p["tipo_ativo"], p["quantidade"]) for p in r["plano"]] == [("CRVE", 10), ("CBE", 14)]
+    so_crve = compensacao.compensar(cen["c"], cen["elab"], inv, tipos_aceitos=("CRVE",), simular=True)
+    assert so_crve["deficit"] == 14  # política do ente pode ser mais restritiva que a lei
+
+
+def test_conciliacao_limite_de_crve_e_periodo_da_cbe(cen):
+    inv = inventario_aprovado(cen)  # 24 unidades
+    emitir(cen, qtd=10, tipo="CBE", safra=2025, serial="CBE-25", conta=cen["conta_org"])
+    emitir(cen, qtd=10, tipo="CBE", safra=2024, serial="CBE-24", conta=cen["conta_org"])
     emitir(cen, qtd=50, tipo="CRVE", serial="CRVE-1", conta=cen["conta_org"])
-    vol = compensacao.compensar(cen["c"], cen["elab"], inv, simular=True)
-    assert {p["tipo_ativo"] for p in vol["plano"]} == {"CRVE"}
-    conc = compensacao.compensar(cen["c"], cen["elab"], inv, finalidade="conciliacao_sbce",
-                                 limite_crve=0.25, simular=True)
-    usado = {p["tipo_ativo"]: p["quantidade"] for p in conc["plano"]}
-    assert usado == {"CBE": 10, "CRVE": 6} and conc["deficit"] == 8
+    r = compensacao.compensar(cen["c"], cen["elab"], inv, finalidade="conciliacao_sbce",
+                              limite_crve=0.25, simular=True)
+    usado = {p["serial"]: p["quantidade"] for p in r["plano"]}
+    assert usado == {"CBE-25": 10, "CRVE-1": 6} and r["deficit"] == 8
+    assert any("art. 11, § 2º" in m for m in r["lotes_ignorados"])
+    # Com autorização do PNA para usar CBE de outro período (art. 11, § 2º, II):
+    r2 = compensacao.compensar(cen["c"], cen["elab"], inv, finalidade="conciliacao_sbce",
+                               limite_crve=0.25, cbe_outros_periodos=True, simular=True)
+    assert r2["deficit"] == 0
+
+
+def test_conciliacao_recusa_credito_voluntario(cen):
+    inv = inventario_aprovado(cen)
+    with pytest.raises(ErroNegocio, match="art. 10"):
+        compensacao.compensar(cen["c"], cen["elab"], inv, finalidade="conciliacao_sbce",
+                              tipos_aceitos=("VOLUNTARIO",), simular=True)
+
+
+def test_conciliacao_usa_emissoes_liquidas(cen):
+    c = cen["c"]
+    inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
+    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="diesel", fator="diesel_b", quantidade=10_000)
+    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="reflorestamento", gas="CO2",
+                            quantidade=5, remocao=True)
+    with pytest.raises(ErroNegocio, match="gas='CO2'"):
+        mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1, remocao=True)
+    for u, a in [("elab", "submeter"), ("verif", "assumir"), ("verif", "verificar"), ("mod", "aprovar")]:
+        mrv.transitar(c, cen[u], inv, a)
+    t = mrv.totais(c, inv)
+    assert t["remocoes"] == 5 and t["escopo1_liquido"] == pytest.approx(t["escopo1"] - 5)
+    emitir(cen, qtd=100, tipo="CBE", safra=2025, serial="CBE-1", conta=cen["conta_org"])
+    r = compensacao.compensar(c, cen["elab"], inv, finalidade="conciliacao_sbce", simular=True)
+    assert r["meta_unidades"] == 19  # ceil(23,06 - 5)
+
+
+def test_verificador_precisa_ser_acreditado(cen):
+    c = cen["c"]
+    nao = c.execute("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('N','verificador',?)",
+                    (cen["ovv"],)).lastrowid
+    inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
+    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
+    mrv.transitar(c, cen["elab"], inv, "submeter")
+    with pytest.raises(NaoAutorizado, match="art. 32"):
+        mrv.transitar(c, nao, inv, "assumir")
+
+
+# ---------------- Lei 15.042/2024: fases e checagens ----------------
+@pytest.mark.parametrize("data,prorrogada,fase", [
+    (date(2025, 6, 1), True, "I"), (date(2026, 12, 11), True, "I"), (date(2026, 12, 12), True, "II"),
+    (date(2028, 1, 1), True, "III"), (date(2029, 12, 12), True, "IV"),
+    (date(2026, 1, 1), False, "II")])
+def test_fases_art50(data, prorrogada, fase):
+    assert fase_em(data, prorrogada).numero == fase
+
+
+def test_obrigacoes_so_exigiveis_a_partir_da_fase_certa():
+    e = enquadrar("concessao", 30_000, data_referencia=date(2026, 6, 1))
+    assert not any(o.exigivel for o in e.obrigacoes if o.titulo.startswith(("Plano", "Relato", "Conciliação")))
+    e4 = enquadrar("concessao", 30_000, data_referencia=date(2030, 1, 1))
+    assert all(o.exigivel for o in e4.obrigacoes)
+
+
+def test_residuos_com_neutralizacao_ficam_fora_art30_p3():
+    assert enquadrar("concessao", 90_000, residuos_com_neutralizacao=True).faixa_sbce == "nao_regulado"
+
+
+def test_patamares_so_podem_ser_majorados_art30_p1():
+    with pytest.raises(ValueError, match="majorados"):
+        enquadrar("empresa", 1, limiar_monitoramento=5_000)
+    assert enquadrar("empresa", 12_000, limiar_monitoramento=15_000).faixa_sbce == "nao_regulado"
+
+
+def test_ente_subnacional_nao_tributa_emissoes_art22():
+    titulos = [o.titulo for o in enquadrar("orgao_publico", 0, esfera="municipal").obrigacoes]
+    assert "Vedação de tributo sobre emissões reguladas" in titulos
+
+
+def test_municipio_nao_faz_programa_jurisdicional():
+    p = checar_projeto_publico(esfera="municipal", proprietario_e_usufrutuario=True,
+                               sobreposicao_terceiros=False, parceria_privada=False, licitacao=False,
+                               anuencia_gestor_area=True, programa_jurisdicional=True, venda_antecipada=True)
+    assert len(p) == 2
+
+
+def test_projeto_publico_com_parceiro_exige_licitacao_e_anuencia():
+    p = checar_projeto_publico(esfera="estadual", proprietario_e_usufrutuario=True,
+                               sobreposicao_terceiros=False, parceria_privada=True, licitacao=False,
+                               anuencia_gestor_area=False)
+    assert any("licitação" in x for x in p) and any("art. 49" in x for x in p)
+
+
+@pytest.mark.parametrize("tipo,pct,ok", [("remocao", 50, True), ("remocao", 49.9, False),
+                                         ("redd_mercado", 70, True), ("redd_mercado", 60, False)])
+def test_reparticao_minima_comunidades_art47(tipo, pct, ok):
+    assert (checar_reparticao_comunidade(tipo, pct) == []) is ok
 
 
 # ---------------- API ----------------
@@ -240,6 +343,10 @@ def test_api_fluxo_e_controle_de_acesso(tmp_path):
     # IDOR: elaborador de outra organização não lê nem movimenta.
     assert cli.get(f"/inventarios/{inv}", headers=H(e2)).status_code == 403
     assert cli.get(f"/contas/{o1['conta_id']}/saldo", headers=H(e2)).status_code == 403
+    assert cli.get("/sbce/calendario").json()["fases"][0]["numero"] == "I"
+    chk = cli.post("/checagens/reparticao-comunidade", json={"tipo_projeto": "redd_mercado",
+                                                             "percentual_comunidade": 60}).json()
+    assert chk["apto"] is False
     enq = cli.post(f"/inventarios/{inv}/enquadramento", headers=H(e1), json={}).json()
     assert enq["faixa_sbce"] == "nao_regulado" and any("preliminar" in a for a in enq["alertas"])
     assert cli.get("/registro/auditoria").json()["integra"] is True

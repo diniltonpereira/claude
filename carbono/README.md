@@ -4,8 +4,8 @@ Plataforma para **órgãos públicos, PPPs e concessões** inventariarem emissõ
 
 ```
  Aferição            Moderação (MRV)                         Registro                Compensação
- atividades ──► rascunho ► submetido ► em_verificação ► verificado ► aprovado ──► aposentar CRVE/CBE
- (fatores GHG)      ▲  elaborador     OVV independente     controladoria    │      (livro-razão com hash)
+ atividades ──► rascunho ► submetido ► em_verificação ► verificado ► aprovado ──► cancelar CRVE/CBE
+ (fatores GHG)      ▲  elaborador   organismo acreditado   controladoria    │      (livro-razão com hash)
                     └────────── devolvido (parecer obrigatório) ◄────────────┘
                                          │
                              Enquadramento SBCE (10 mil / 25 mil tCO2e) + obrigações contratuais
@@ -18,17 +18,18 @@ Plataforma para **órgãos públicos, PPPs e concessões** inventariarem emissõ
 | `plataforma/fatores.py` | Fatores de emissão com fonte e ano, e GWP do AR5 |
 | `plataforma/calculo.py` | Aferição por fator ou por gás, com parcela biogênica separada e memória de cálculo |
 | `plataforma/mrv.py` | Fluxo de verificação e moderação com segregação de funções |
-| `plataforma/enquadramento.py` | Faixa no SBCE e obrigações por tipo (órgão público, PPP, concessão, concessão florestal) |
-| `plataforma/registro.py` | Emissão, transferência, aposentadoria e cancelamento de lotes, com livro-razão somente-inclusão encadeado por SHA-256 |
-| `plataforma/compensacao.py` | Compensação voluntária e conciliação SBCE com regras de elegibilidade |
+| `plataforma/enquadramento.py` | Faixa no SBCE, fase de implantação (art. 50), obrigações por tipo e checagens de projeto público (arts. 43 e 49) e de repartição com comunidades (art. 47) |
+| `plataforma/registro.py` | Emissão, transferência e cancelamento (art. 2º, II; art. 45) de lotes, com livro-razão somente-inclusão encadeado por SHA-256 |
+| `plataforma/compensacao.py` | Compensação voluntária (art. 45) e conciliação periódica sobre emissões líquidas (art. 34), com limite de CRVE do PNA e validade da CBE por período |
 | `plataforma/api.py` | API REST (FastAPI). Documentação em `/docs` |
 
 ## Regras que o sistema garante
 
-- **Segregação de funções:** quem elabora não verifica nem modera. O verificador precisa ser OVV credenciado e externo à organização. Toda devolução exige parecer.
-- **Sem dupla contagem:** uma unidade aposentada ou cancelada nunca volta a circular, e o saldo não fica negativo. As operações rodam em transação com trava de escrita.
+- **Segregação de funções:** quem elabora não verifica nem modera. O verificador precisa ser organismo de inspeção acreditado (art. 32, parágrafo único) e externo à organização. Toda devolução exige parecer.
+- **Sem dupla contagem (art. 2º, IX):** uma unidade cancelada nunca volta a circular, e o saldo não fica negativo. As operações rodam em transação com trava de escrita.
 - **Auditoria:** o livro-razão não aceita UPDATE nem DELETE (triggers), e `GET /registro/auditoria` recalcula a cadeia de hashes.
-- **Compensação com lastro:** só se compensa inventário aprovado, sem passar do total, com safra entre o ano do inventário e 5 anos antes. CBE não entra em compensação voluntária, e a CRVE na conciliação respeita o limite configurado.
+- **Compensação com lastro:** só se compensa inventário aprovado, sem passar do total, com safra entre o ano do inventário e 5 anos antes.
+- **Conciliação conforme a lei:** só CBE e CRVE (art. 10), sobre emissões líquidas (art. 2º, V). A CRVE respeita o limite do PNA (art. 21, IV), e a CBE vale no próprio período, salvo autorização (art. 11, § 2º).
 - **Idempotência:** operações reenviadas com a mesma `chave_idempotencia` não se repetem.
 - **Acesso:** cada usuário só lê e movimenta dados da própria organização (testado contra IDOR).
 
@@ -37,7 +38,7 @@ Plataforma para **órgãos públicos, PPPs e concessões** inventariarem emissõ
 ```bash
 cd carbono
 pip install -r requirements.txt
-python -m pytest -q                      # 25 testes
+python -m pytest -q                      # 45 testes
 python -m plataforma demo                # ciclo completo com dados fictícios
 python -m plataforma iniciar             # cria o banco e o 1º registrador
 python -m plataforma servir --porta 8000 # API em http://127.0.0.1:8000/docs
@@ -51,4 +52,4 @@ Na API, identifique o usuário pelo cabeçalho `X-Usuario-Id` (somente no MVP).
 2. Atualizar os fatores de emissão (MCTI e Programa Brasileiro GHG Protocol) e os limiares do SBCE quando sair a regulamentação definitiva.
 3. Migrar do SQLite para PostgreSQL se houver muitos entes simultâneos.
 4. Integrar com o Sistema de Registro Central do SBCE e com o processo eletrônico (SEI) para guardar as evidências.
-5. Validar os pontos ⚠️ de `docs/MARCO_LEGAL.md` no texto oficial.
+5. Acompanhar a regulamentação do órgão gestor e ajustar os parâmetros (lista em `docs/MARCO_LEGAL.md`, seção 4).

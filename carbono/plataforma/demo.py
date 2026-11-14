@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import os
+from datetime import date
 
 from . import compensacao, mrv, registro
 from .banco import conectar
-from .enquadramento import enquadrar
+from .enquadramento import checar_projeto_publico, enquadrar, fase_em
 
 
 def executar(banco: str = "demo.db") -> dict:
@@ -21,12 +22,13 @@ def executar(banco: str = "demo.db") -> dict:
                 "('Águas Exemplo S.A.','22222222000191','concessao','Contrato 01/2020',?)", pref)
     flor = ins("INSERT INTO organizacao (nome,cnpj,tipo,contrato_ref) VALUES "
                "('Floresta Viva SPE','33333333000191','concessao_florestal','UMF II — Flona X')")
-    ovv = ins("INSERT INTO organizacao (nome,cnpj,tipo) VALUES ('OVV Certifica','44444444000191','empresa')")
+    oia = ins("INSERT INTO organizacao (nome,cnpj,tipo) VALUES "
+              "('Inspeção Acreditada Ltda.','44444444000191','empresa')")
     conta = {o: registro.abrir_conta(c, o) for o in (pref, sanea, flor)}
 
     elab = ins("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('Ana (SEMMA)','elaborador',?)", pref)
-    verif = ins("INSERT INTO usuario (nome,papel,organizacao_id,ovv_credenciado) VALUES "
-                "('Bruno (OVV)','verificador',?,1)", ovv)
+    verif = ins("INSERT INTO usuario (nome,papel,organizacao_id,acreditado) VALUES "
+                "('Bruno (organismo acreditado)','verificador',?,1)", oia)
     mod = ins("INSERT INTO usuario (nome,papel) VALUES ('Carla (Controladoria)','moderador')")
     gest_flor = ins("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('Davi','elaborador',?)", flor)
 
@@ -40,6 +42,8 @@ def executar(banco: str = "demo.db") -> dict:
                                 evidencia="NF/fatura no processo SEI 0001/2026")
     mrv.adicionar_atividade(c, elab, inv, descricao="Recarga de ar-condicionado", gas="HFC-134a",
                             quantidade=0.12, evidencia="Ordem de serviço 77/2025")
+    mrv.adicionar_atividade(c, elab, inv, descricao="Restauração do Parque Municipal (remoção)",
+                            gas="CO2", quantidade=40, remocao=True, evidencia="Laudo de biomassa 3/2025")
 
     # Moderação: verificação independente + aprovação pela controladoria.
     mrv.transitar(c, elab, inv, "submeter")
@@ -50,7 +54,8 @@ def executar(banco: str = "demo.db") -> dict:
     mrv.transitar(c, verif, inv, "verificar", "Conferido por amostragem de 30% das notas.")
     mrv.transitar(c, mod, inv, "aprovar", "Aprovado. Publicar no portal da transparência.")
 
-    # Concessão florestal gera CRVE; prefeitura adquire parte (após contratação regular).
+    # Concessão florestal gera CRVE; a prefeitura compra parte após contratação regular e
+    # compensa, com cancelamento no registro (art. 45).
     lote = registro.emitir(c, reg, conta_id=conta[flor], tipo_ativo="CRVE", projeto="REDD+ UMF II",
                            metodologia="Metodologia credenciada SBCE (exemplo)", safra=2024,
                            quantidade=5_000, serial="BR-CRVE-2024-000001")["lote_id"]
@@ -64,13 +69,18 @@ def executar(banco: str = "demo.db") -> dict:
 
     return {
         "totais_inventario_2025": t,
-        "enquadramento_prefeitura": enquadrar("orgao_publico", t["escopo1"]).como_dict()["faixa_sbce"],
+        "fase_sbce_hoje": fase_em(date.today()).numero,
+        "enquadramento_prefeitura": enquadrar("orgao_publico", t["escopo1"],
+                                              esfera="municipal").como_dict()["faixa_sbce"],
+        "projeto_publico_em_uc_municipal_sem_licitacao": checar_projeto_publico(
+            esfera="municipal", proprietario_e_usufrutuario=True, sobreposicao_terceiros=False,
+            parceria_privada=True, licitacao=False, anuencia_gestor_area=True),
         "enquadramento_concessao_florestal": [
             o.titulo for o in enquadrar("concessao_florestal", 0, gera_creditos=True,
                                         terras_publicas_ou_tradicionais=True).obrigacoes],
         "historico_mrv": [(e["de_status"], e["para_status"]) for e in mrv.historico(c, inv)],
         "plano_compensacao": simulacao["plano"],
-        "aposentado": sum(p["quantidade"] for p in resultado["plano"]),
+        "cancelado_para_compensacao": sum(p["quantidade"] for p in resultado["plano"]),
         "saldo_prefeitura": registro.saldo(c, conta[pref]),
         "saldo_concessao_florestal": sum(l["quantidade"] for l in registro.saldo(c, conta[flor])),
         "auditoria": registro.verificar_cadeia(c),

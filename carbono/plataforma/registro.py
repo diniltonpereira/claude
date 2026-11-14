@@ -2,7 +2,7 @@
 
 Garantias:
 - 1 unidade = 1 tCO2e; saldo nunca fica negativo (CHECK + trava de escrita);
-- ativo aposentado ou cancelado não volta a circular (impede dupla contagem);
+- ativo cancelado não volta a circular (vedação à dupla contagem, art. 2º, IX);
 - cada movimento entra num livro-razão somente-inclusão com hash encadeado;
 - chave de idempotência evita duplicar uma operação reenviada pela rede.
 
@@ -134,14 +134,18 @@ def transferir(con: sqlite3.Connection, usuario_id: int, *, lote_id: int, quanti
     return {"lote_id": movido, "movimento_id": mid, "repetido": False}
 
 
-def aposentar(con: sqlite3.Connection, usuario_id: int, *, lote_id: int, quantidade: int,
-              finalidade: str, beneficiario: str, inventario_id: int | None = None,
-              chave_idempotencia: str | None = None, _em_transacao: bool = False) -> dict:
-    """Aposenta (retira de circulação) unidades para compensação ou conciliação. Irreversível."""
-    if finalidade not in ("compensacao_voluntaria", "conciliacao_sbce", "cancelamento"):
+def cancelar(con: sqlite3.Connection, usuario_id: int, *, lote_id: int, quantidade: int,
+             finalidade: str, beneficiario: str, inventario_id: int | None = None,
+             chave_idempotencia: str | None = None, _em_transacao: bool = False) -> dict:
+    """Cancela unidades (art. 2º, II; art. 45), retirando-as de circulação. Irreversível.
+
+    Finalidades: compensação voluntária (art. 45), conciliação periódica (art. 34) ou
+    invalidação (ex.: reversão de remoções, art. 2º, XXXII, ou erro de escrituração).
+    """
+    if finalidade not in ("compensacao_voluntaria", "conciliacao_sbce", "invalidacao"):
         raise ErroNegocio("Finalidade inválida.")
     if not beneficiario.strip():
-        raise ErroNegocio("Informe o beneficiário da aposentadoria.")
+        raise ErroNegocio("Informe o beneficiário do cancelamento.")
 
     def _executar():
         if (m := _ja_processado(con, chave_idempotencia, usuario_id)):
@@ -149,11 +153,9 @@ def aposentar(con: sqlite3.Connection, usuario_id: int, *, lote_id: int, quantid
         lote = buscar(con, "lote", lote_id)
         _exigir_titular(con, usuario_id, lote["conta_id"])
         movido = _separar(con, lote, quantidade)
-        status = "cancelado" if finalidade == "cancelamento" else "aposentado"
-        con.execute("""UPDATE lote SET status=?, finalidade=?, beneficiario=?, inventario_id=?
-                       WHERE id=?""", (status, finalidade, beneficiario, inventario_id, movido))
-        tipo = "cancelamento" if finalidade == "cancelamento" else "aposentadoria"
-        mid = _registrar(con, tipo=tipo, lote_id=movido, quantidade=quantidade,
+        con.execute("""UPDATE lote SET status='cancelado', finalidade=?, beneficiario=?,
+                       inventario_id=? WHERE id=?""", (finalidade, beneficiario, inventario_id, movido))
+        mid = _registrar(con, tipo="cancelamento", lote_id=movido, quantidade=quantidade,
                          de_conta=lote["conta_id"], para_conta=None, usuario_id=usuario_id,
                          motivo=f"{finalidade}: {beneficiario}", chave=chave_idempotencia)
         return {"lote_id": movido, "movimento_id": mid, "repetido": False}
