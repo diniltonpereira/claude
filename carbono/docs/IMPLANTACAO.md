@@ -1,6 +1,6 @@
 # Implantação do CarbonMG em produção
 
-Roteiro para colocar o piloto no ar com uma prefeitura. Tudo aqui foi testado com a imagem Docker do projeto. A integração real com o gov.br depende de credenciais que só o órgão obtém; o fluxo foi testado com um provedor simulado.
+Roteiro para colocar o piloto no ar com uma prefeitura. A lista do que fazer, com responsáveis e prazos, está em `docs/CHECKLIST_PILOTO.md`. Tudo aqui foi testado com a imagem Docker do projeto. A integração real com o gov.br depende de credenciais que só o órgão obtém; o fluxo foi testado com um provedor simulado.
 
 ## 1. Arquitetura do piloto
 
