@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 2
+VERSAO_ESQUEMA = 3
 
 ESQUEMA = """
 PRAGMA foreign_keys = ON;
@@ -294,6 +294,71 @@ CREATE TRIGGER IF NOT EXISTS movimento_sem_update BEFORE UPDATE ON movimento
 BEGIN SELECT RAISE(ABORT, 'livro-razão é somente inclusão'); END;
 CREATE TRIGGER IF NOT EXISTS movimento_sem_delete BEFORE DELETE ON movimento
 BEGIN SELECT RAISE(ABORT, 'livro-razão é somente inclusão'); END;
+
+-- ---------------------------------------------------------------- compra de créditos (fase 2)
+-- Credenciamento aberto de vendedores (Lei 14.133/2021, art. 79): critérios objetivos, validade de 12 meses.
+CREATE TABLE IF NOT EXISTS credenciamento (
+    id              INTEGER PRIMARY KEY,
+    organizacao_id  INTEGER NOT NULL REFERENCES organizacao(id),
+    status          TEXT NOT NULL DEFAULT 'em_analise' CHECK (status IN ('em_analise','aprovado','indeferido')),
+    documentos      TEXT NOT NULL,          -- JSON {criterio: anexo_id}
+    declaracao_dupla_contagem INTEGER NOT NULL CHECK (declaracao_dupla_contagem IN (0,1)),
+    criterios       TEXT,                   -- JSON {criterio: true/false} preenchido na análise
+    parecer         TEXT,
+    solicitado_por  INTEGER NOT NULL REFERENCES usuario(id),
+    solicitado_em   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    analisado_por   INTEGER REFERENCES usuario(id),
+    analisado_em    TEXT,
+    valido_ate      TEXT,
+    CHECK (status <> 'aprovado' OR valido_ate IS NOT NULL)
+);
+
+CREATE TABLE IF NOT EXISTS oferta (
+    id              INTEGER PRIMARY KEY,
+    fornecedor_id   INTEGER NOT NULL REFERENCES organizacao(id),
+    lote_id         INTEGER NOT NULL REFERENCES lote(id),
+    categoria       TEXT NOT NULL CHECK (categoria IN ('redd','restauracao','energia','residuos_biogas','eficiencia','outros')),
+    municipio       TEXT NOT NULL,
+    uf              TEXT NOT NULL CHECK (length(uf) = 2),
+    preco_unitario  REAL NOT NULL CHECK (preco_unitario > 0),   -- R$ por tCO2e
+    quantidade_disponivel INTEGER NOT NULL CHECK (quantidade_disponivel >= 0),
+    ativa           INTEGER NOT NULL DEFAULT 1 CHECK (ativa IN (0,1)),
+    criada_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- Pedido segue a ordem da despesa pública: instrução > empenho prévio > entrega > liquidação > pagamento.
+CREATE TABLE IF NOT EXISTS pedido (
+    id              INTEGER PRIMARY KEY,
+    orgao_id        INTEGER NOT NULL REFERENCES organizacao(id),
+    oferta_id       INTEGER NOT NULL REFERENCES oferta(id),
+    inventario_id   INTEGER REFERENCES inventario(id),
+    quantidade      INTEGER NOT NULL CHECK (quantidade > 0),
+    preco_unitario  REAL NOT NULL CHECK (preco_unitario > 0),
+    taxa_percentual REAL NOT NULL CHECK (taxa_percentual BETWEEN 0 AND 100),
+    valor_creditos  REAL NOT NULL,
+    valor_taxa      REAL NOT NULL,
+    valor_total     REAL NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'rascunho' CHECK (status IN
+                    ('rascunho','instruido','empenhado','entregue','liquidado','pago','cancelado')),
+    processo        TEXT,                   -- nº do processo administrativo (SEI)
+    empenho_numero  TEXT,
+    empenho_data    TEXT,
+    empenho_valor   REAL,
+    lote_entregue_id INTEGER REFERENCES lote(id),
+    nota_fiscal     TEXT,
+    liquidado_por   INTEGER REFERENCES usuario(id),
+    pagamento_ref   TEXT,                   -- ordem bancária / documento do sistema financeiro
+    pagamento_data  TEXT,
+    motivo_cancelamento TEXT,
+    criado_por      INTEGER NOT NULL REFERENCES usuario(id),
+    criado_em       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    CHECK (status NOT IN ('empenhado','entregue','liquidado','pago') OR empenho_numero IS NOT NULL),
+    CHECK (status NOT IN ('entregue','liquidado','pago') OR lote_entregue_id IS NOT NULL),
+    CHECK (status NOT IN ('liquidado','pago') OR (liquidado_por IS NOT NULL AND nota_fiscal IS NOT NULL)),
+    CHECK (status <> 'pago' OR pagamento_ref IS NOT NULL),
+    CHECK (empenho_valor IS NULL OR empenho_valor >= valor_total - 0.005)
+);
+CREATE INDEX IF NOT EXISTS ix_pedido_orgao ON pedido(orgao_id, status);
 
 -- Trilha de auditoria geral: quem, quando, de onde, o que havia antes e depois.
 CREATE TABLE IF NOT EXISTS auditoria (

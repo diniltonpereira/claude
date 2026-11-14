@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import anexos, auditoria, compensacao, fatores, mrv, painel, registro, relatorio, terceirizadas
+from . import anexos, auditoria, compensacao, fatores, marketplace, mrv, painel, registro, relatorio, terceirizadas
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
                             checar_projeto_publico, checar_reparticao_comunidade, enquadrar_operador,
@@ -214,6 +214,59 @@ class NotificacaoIn(BaseModel):
     texto: str = Field(min_length=3)
     prazo: date | None = None
     anexo_id: int | None = None
+
+
+class CredenciamentoIn(BaseModel):
+    documentos: dict[str, int]
+    declaracao_dupla_contagem: bool
+
+
+class AnaliseIn(BaseModel):
+    criterios: dict[str, bool]
+    parecer: str | None = None
+
+
+class OfertaIn(BaseModel):
+    lote_id: int
+    categoria: Literal["redd", "restauracao", "energia", "residuos_biogas", "eficiencia", "outros"]
+    municipio: str = Field(min_length=2)
+    uf: str = Field(pattern=r"^[A-Za-z]{2}$")
+    preco_unitario: float = Field(gt=0)
+    quantidade: int = Field(gt=0)
+
+
+class SimulacaoIn(BaseModel):
+    quantidade: int = Field(gt=0)
+
+
+class PedidoIn(BaseModel):
+    oferta_id: int
+    quantidade: int = Field(gt=0)
+    inventario_id: int | None = None
+
+
+class InstrucaoIn(BaseModel):
+    processo: str = Field(min_length=3)
+
+
+class EmpenhoIn(BaseModel):
+    numero: str = Field(min_length=3)
+    data: date
+    valor: float = Field(gt=0)
+
+
+class LiquidacaoIn(BaseModel):
+    nota_fiscal: str = Field(min_length=1)
+    conferido: bool
+
+
+class PagamentoIn(BaseModel):
+    referencia: str = Field(min_length=3)
+    data: date
+
+
+class CancelamentoPedidoIn(BaseModel):
+    motivo: str = Field(min_length=3)
 
 
 # ---------------------------------------------------------------- aplicação
@@ -621,6 +674,98 @@ def criar_app(caminho_banco: str | None = None) -> FastAPI:
     def cancelar(d: CancelamentoIn, u=Depends(usuario), c=Depends(db)):
         """Cancelamento de ativos (Lei 15.042/2024, art. 2º, II, e art. 45). Irreversível."""
         return registro.cancelar(c, u["id"], **d.model_dump())
+
+    # ---------------- compra de créditos (credenciamento, catálogo, pedidos) ----------------
+    @app.get("/marketplace/regras")
+    def regras_marketplace():
+        """Critérios de credenciamento, categorias e taxa da plataforma (públicos)."""
+        return {"criterios": marketplace.CRITERIOS, "categorias": marketplace.CATEGORIAS,
+                "taxa_percentual": marketplace.taxa_percentual()}
+
+    @app.post("/credenciamentos", status_code=201)
+    def solicitar_cred(d: CredenciamentoIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": marketplace.solicitar_credenciamento(c, u["id"], **d.model_dump())}
+
+    @app.get("/credenciamentos")
+    def listar_cred(u=Depends(usuario), c=Depends(db)):
+        return marketplace.credenciamentos(c, u["id"])
+
+    @app.post("/credenciamentos/{cid}/analise")
+    def analisar_cred(cid: int, d: AnaliseIn, u=Depends(usuario), c=Depends(db)):
+        return {"status": marketplace.analisar_credenciamento(c, u["id"], cid, **d.model_dump())}
+
+    @app.get("/ofertas")
+    def ver_catalogo(uf: str | None = None, categoria: str | None = None, _=Depends(usuario), c=Depends(db)):
+        return marketplace.catalogo(c, uf=uf, categoria=categoria)
+
+    @app.get("/ofertas/minhas")
+    def minhas_ofertas(u=Depends(usuario), c=Depends(db)):
+        return [dict(r) for r in c.execute(
+            """SELECT o.*, l.serial, l.tipo_ativo, l.certificadora FROM oferta o JOIN lote l ON l.id=o.lote_id
+               WHERE o.fornecedor_id=? ORDER BY o.id DESC""", (u["organizacao_id"],))]
+
+    @app.post("/ofertas", status_code=201)
+    def publicar(d: OfertaIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": marketplace.publicar_oferta(c, u["id"], **d.model_dump())}
+
+    @app.delete("/ofertas/{oid}")
+    def retirar(oid: int, u=Depends(usuario), c=Depends(db)):
+        marketplace.retirar_oferta(c, u["id"], oid)
+        return {"ok": True}
+
+    @app.post("/ofertas/{oid}/simulacao")
+    def simular(oid: int, d: SimulacaoIn, _=Depends(usuario), c=Depends(db)):
+        return marketplace.simular(c, oid, d.quantidade)
+
+    @app.post("/pedidos", status_code=201)
+    def criar_pedido(d: PedidoIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": marketplace.criar_pedido(c, u["id"], **d.model_dump())}
+
+    @app.get("/pedidos")
+    def listar_pedidos(u=Depends(usuario), c=Depends(db)):
+        return marketplace.listar_pedidos(c, u["id"])
+
+    @app.get("/pedidos/{pid}")
+    def ver_pedido(pid: int, u=Depends(usuario), c=Depends(db)):
+        return marketplace.ver_pedido(c, u["id"], pid)
+
+    @app.get("/pedidos/{pid}/minuta-tr.html", response_class=HTMLResponse)
+    def minuta(pid: int, u=Depends(usuario), c=Depends(db)):
+        return HTMLResponse(marketplace.minuta_tr_html(c, u["id"], pid))
+
+    @app.post("/pedidos/{pid}/instrucao")
+    def instruir(pid: int, d: InstrucaoIn, u=Depends(usuario), c=Depends(db)):
+        marketplace.instruir(c, u["id"], pid, processo=d.processo)
+        return {"ok": True}
+
+    @app.post("/pedidos/{pid}/empenho")
+    def empenho(pid: int, d: EmpenhoIn, u=Depends(usuario), c=Depends(db)):
+        marketplace.registrar_empenho(c, u["id"], pid, numero=d.numero, data=d.data.isoformat(), valor=d.valor)
+        return {"ok": True}
+
+    @app.post("/pedidos/{pid}/entrega")
+    def entrega(pid: int, u=Depends(usuario), c=Depends(db)):
+        return marketplace.entregar(c, u["id"], pid)
+
+    @app.post("/pedidos/{pid}/liquidacao")
+    def liquidacao(pid: int, d: LiquidacaoIn, u=Depends(usuario), c=Depends(db)):
+        marketplace.liquidar(c, u["id"], pid, nota_fiscal=d.nota_fiscal, conferido=d.conferido)
+        return {"ok": True}
+
+    @app.post("/pedidos/{pid}/pagamento")
+    def pagamento(pid: int, d: PagamentoIn, u=Depends(usuario), c=Depends(db)):
+        marketplace.registrar_pagamento(c, u["id"], pid, referencia=d.referencia, data=d.data.isoformat())
+        return {"ok": True}
+
+    @app.post("/pedidos/{pid}/cancelamento")
+    def cancelar_ped(pid: int, d: CancelamentoPedidoIn, u=Depends(usuario), c=Depends(db)):
+        marketplace.cancelar_pedido(c, u["id"], pid, motivo=d.motivo)
+        return {"ok": True}
+
+    @app.get("/organizacoes/{oid}/carteira")
+    def ver_carteira(oid: int, u=Depends(usuario), c=Depends(db)):
+        _pode_ver_org(u, oid)
+        return marketplace.carteira(c, oid)
 
     # ---------------- auditoria ----------------
     @app.get("/auditoria")

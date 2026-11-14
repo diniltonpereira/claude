@@ -155,7 +155,11 @@ function menu() {
   if (p === "elaborador") itens.push(["unidades", "Unidades e instalações"]);
   if (["elaborador", "fiscal", "fornecedor", "registrador", "auditor"].includes(p))
     itens.push(["terceirizadas", p === "fornecedor" ? "Meus contratos" : "Terceirizadas"]);
-  if (["elaborador", "registrador", "fornecedor"].includes(p)) itens.push(["registro", "Créditos"]);
+  if (p === "elaborador") itens.push(["catalogo", "Comprar créditos"]);
+  if (["elaborador", "fiscal", "registrador", "auditor"].includes(p)) itens.push(["pedidos", "Pedidos de compra"]);
+  if (p === "fornecedor") itens.push(["vendas", "Vender créditos"]);
+  if (["elaborador", "registrador", "fornecedor"].includes(p)) itens.push(["registro", "Créditos em conta"]);
+  if (p === "registrador") itens.push(["credenciamentos", "Credenciamentos"]);
   if (p === "registrador") itens.push(["cadastros", "Cadastros e fatores"]);
   if (p === "registrador" || p === "auditor") itens.push(["auditoria", "Trilha de auditoria"]);
   itens.push(["transparencia", "Transparência"]);
@@ -834,6 +838,208 @@ async function telaAuditoria() {
       </tbody></table></div>` : `<p class="vazio">Nenhum registro.</p>`}</section>`;
 }
 
+// ---------------------------------------------------------------- compra de créditos
+const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const ETAPAS_PEDIDO = [["rascunho", "Pedido"], ["instruido", "Instrução (TR)"], ["empenhado", "Empenho"],
+  ["entregue", "Entrega"], ["liquidado", "Liquidação"], ["pago", "Pagamento"]];
+const ROTULO_PEDIDO = { rascunho: "Em elaboração", instruido: "Instruído", empenhado: "Empenhado, aguardando entrega",
+  entregue: "Entregue, aguardando liquidação", liquidado: "Liquidado, aguardando pagamento", pago: "Pago", cancelado: "Cancelado" };
+const situacaoPedido = (s) => `<span class="situacao ${s === "pago" ? "aprovado" : s === "cancelado" ? "cancelado" : "submetido"}">${esc(ROTULO_PEDIDO[s])}</span>`;
+
+async function telaCatalogo() {
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  const uf = params.get("uf") || "", cat = params.get("categoria") || "";
+  const q = new URLSearchParams(); if (uf) q.set("uf", uf); if (cat) q.set("categoria", cat);
+  const [regras, ofertas, cart, invs] = await Promise.all([api("GET", "/marketplace/regras"),
+    api("GET", `/ofertas?${q}`), api("GET", `/organizacoes/${estado.eu.organizacao.id}/carteira`), api("GET", "/inventarios")]);
+  const filtro = (nome, valor, rotulo) => `<a class="botao ${(nome === "uf" ? uf : cat) === valor ? "" : "secundario"}"
+    href="#/catalogo?${new URLSearchParams({ ...(uf && nome !== "uf" ? { uf } : {}), ...(cat && nome !== "categoria" ? { categoria: cat } : {}), ...(valor ? { [nome]: valor } : {}) })}">${esc(rotulo)}</a>`;
+  conteudo.innerHTML = `<h1>Comprar créditos</h1>
+    <p class="introducao">Créditos certificados por terceiros, ofertados por empresas com credenciamento aberto e válido. A compra segue o rito da despesa pública: instrução com TR, empenho prévio, entrega no registro, liquidação pelo fiscal e pagamento. A taxa da plataforma (${t(regras.taxa_percentual)}%) aparece em todas as etapas.</p>
+    <section class="bloco"><h2>Carteira de compensação</h2><dl class="cifra">
+      <div><dt>Inventário aprovado</dt><dd>${cart.inventario_ano ?? "—"}</dd></div>
+      <div><dt>Compensado (escopos 1 e 2)</dt><dd>${t(cart.percentual_compensado)}%</dd></div>
+      <div><dt>Saldo a compensar</dt><dd>${t(cart.saldo_a_compensar)} <small>tCO2e</small></dd></div>
+      <div><dt>Créditos em conta</dt><dd>${t(cart.creditos_em_conta)}</dd></div>
+      <div><dt>A comprar</dt><dd>${t(cart.a_comprar)}</dd></div></dl></section>
+    <div class="acoes" role="group" aria-label="Filtros">${filtro("uf", "", "Todos os estados")}${filtro("uf", "MG", "Só projetos em MG")}
+      ${filtro("categoria", "", "Todas as categorias")}${Object.entries(regras.categorias).map(([k, v]) => filtro("categoria", k, v)).join("")}</div>
+    <section class="bloco" style="margin-top:1rem">${ofertas.length ? `<div class="rolagem"><table>
+      <thead><tr><th>Projeto</th><th>Local</th><th>Certificação</th><th class="num">Disponível</th><th class="num">Preço/tCO2e</th><th></th></tr></thead><tbody>
+      ${ofertas.map((o) => `<tr><td>${esc(o.projeto)}<div class="memoria">${esc(o.categoria_nome)} · ${esc(o.fornecedor)}</div></td>
+        <td>${esc(o.municipio)}/${esc(o.uf)}</td><td>${esc(o.certificadora || ROTULO_ATIVO[o.tipo_ativo])} · ${esc(o.metodologia)} · safra ${o.safra}<div class="memoria mono">${esc(o.serial)}</div></td>
+        <td class="num">${t(o.disponivel)}</td><td class="num">${brl(o.preco_unitario)}</td>
+        <td><button type="button" class="botao secundario" data-oferta="${o.id}" data-max="${o.disponivel}">Simular</button></td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="vazio">Nenhuma oferta com estes filtros.</p>`}</section>
+    <section class="bloco" id="simulacao" hidden><h2>Simulação</h2><form id="f-sim" class="grade">
+      <input type="hidden" name="oferta_id">
+      <label>Quantidade (tCO2e)<input name="quantidade" type="number" min="1" required></label>
+      <label>Inventário a compensar<select name="inventario_id"><option value="">Nenhum</option>${invs.filter((i) => i.status === "aprovado").map((i) => `<option value="${i.id}">${i.ano}</option>`).join("")}</select></label>
+      <div class="acoes largo"><button type="submit" class="botao secundario">Calcular custo</button></div><p class="erro-campo largo"></p></form>
+      <div id="sim-resultado"></div></section>`;
+  conteudo.querySelectorAll("[data-oferta]").forEach((b) => (b.onclick = () => {
+    const f = $("#f-sim"); $("#simulacao").hidden = false;
+    f.elements.oferta_id.value = b.dataset.oferta;
+    f.elements.quantidade.max = b.dataset.max;
+    f.elements.quantidade.value = Math.min(Number(b.dataset.max), Math.max(cart.a_comprar, 1));
+    $("#sim-resultado").innerHTML = ""; f.elements.quantidade.focus();
+  }));
+  aoEnviar($("#f-sim"), async (d) => {
+    const r = await api("POST", `/ofertas/${d.oferta_id}/simulacao`, { quantidade: d.quantidade });
+    $("#sim-resultado").innerHTML = `<table style="margin-top:1rem"><tbody>
+      <tr><td>${t(r.quantidade)} tCO2e × ${brl(r.preco_unitario)}</td><td class="num">${brl(r.valor_creditos)}</td></tr>
+      <tr><td>Taxa da plataforma (${t(r.taxa_percentual)}%)</td><td class="num">${brl(r.valor_taxa)}</td></tr>
+      <tr><td><strong>Total a empenhar</strong></td><td class="num"><strong>${brl(r.valor_total)}</strong></td></tr></tbody></table>
+      <div class="acoes" style="margin-top:1rem"><button type="button" class="botao" id="b-pedido">Abrir pedido de compra</button></div>`;
+    $("#b-pedido").onclick = async () => {
+      try {
+        const p = await api("POST", "/pedidos", { oferta_id: Number(d.oferta_id), quantidade: d.quantidade,
+          inventario_id: d.inventario_id ? Number(d.inventario_id) : null });
+        avisar("Pedido aberto. Instrua o processo com a minuta de TR."); location.hash = `#/pedidos/${p.id}`;
+      } catch (e) { avisar(e.message, true); }
+    };
+  });
+}
+
+async function telaPedidos() {
+  const lista = await api("GET", "/pedidos");
+  conteudo.innerHTML = `<h1>${papel() === "fornecedor" ? "Pedidos recebidos" : "Pedidos de compra"}</h1>
+    <p class="introducao">Cada pedido avança só na ordem da despesa pública. O sistema bloqueia pular etapas.</p>
+    <section class="bloco">${tabelaPedidos(lista)}</section>`;
+}
+
+function tabelaPedidos(lista) {
+  if (!lista.length) return `<p class="vazio">Nenhum pedido.</p>`;
+  return `<div class="rolagem"><table><thead><tr><th class="num">Nº</th><th>Órgão</th><th>Projeto</th><th class="num">Qtd.</th><th class="num">Total</th><th>Situação</th></tr></thead><tbody>
+    ${lista.map((p) => `<tr class="clicavel" data-ir="#/pedidos/${p.id}"><td class="num"><a href="#/pedidos/${p.id}">${p.id}</a></td>
+      <td>${esc(p.orgao)}</td><td>${esc(p.projeto)}<div class="memoria">${esc(p.fornecedor)}</div></td>
+      <td class="num">${t(p.quantidade)}</td><td class="num">${brl(p.valor_total)}</td><td>${situacaoPedido(p.status)}</td></tr>`).join("")}
+  </tbody></table></div>`;
+}
+
+async function telaPedido(id) {
+  const p = await api("GET", `/pedidos/${id}`);
+  const pp = papel();
+  const doOrgao = estado.eu.organizacao?.id === p.orgao_id;
+  const idx = ETAPAS_PEDIDO.findIndex(([k]) => k === p.status);
+  const etapas = ETAPAS_PEDIDO.map(([k, n], i) => `<li class="${p.status === "cancelado" ? "" : i < idx || p.status === "pago" ? "feita" : i === idx ? "atual" : ""}"><strong>${n}</strong>${
+    { instruido: p.processo, empenhado: p.empenho_numero, entregue: p.lote_entregue_id ? "registro conferido" : "", liquidado: p.nota_fiscal, pago: p.pagamento_ref }[k] && i <= idx
+      ? `<span class="carimbo">${esc({ instruido: p.processo, empenhado: p.empenho_numero, entregue: "No registro", liquidado: p.nota_fiscal, pago: p.pagamento_ref }[k])}</span>` : ""}</li>`).join("");
+  let acao = "";
+  if (doOrgao && pp === "elaborador" && p.status === "rascunho") acao = `<form id="f-instr" class="grade">
+      <p class="largo">Abra a minuta de TR, junte-a ao processo e submeta à assessoria jurídica (Lei 14.133, art. 53). Depois informe o número do processo.</p>
+      <label class="largo">Nº do processo administrativo<input name="processo" required placeholder="SEI 0000.01.0000000/2026-00"></label>
+      <div class="acoes largo"><button type="submit" class="botao">Registrar instrução</button></div><p class="erro-campo largo"></p></form>`;
+  if (doOrgao && pp === "elaborador" && p.status === "instruido") acao = `<form id="f-emp" class="grade">
+      <p class="largo">Registre a nota de empenho emitida no sistema financeiro (Lei 4.320, art. 60). O empenho reserva os créditos na oferta.</p>
+      <label>Nº do empenho<input name="numero" required></label><label>Data<input name="data" type="date" required></label>
+      <label>Valor empenhado (R$)<input name="valor" type="number" step="0.01" min="0" value="${p.valor_total}" required></label>
+      <div class="acoes largo"><button type="submit" class="botao">Registrar empenho</button></div><p class="erro-campo largo"></p></form>`;
+  if (pp === "fornecedor" && p.status === "empenhado") acao = `<p>Empenho ${esc(p.empenho_numero)} registrado. Entregue os créditos: eles serão transferidos para a conta do órgão no registro.</p>
+      <button type="button" class="botao" id="b-entregar">Entregar ${t(p.quantidade)} créditos</button>`;
+  if (doOrgao && pp === "fiscal" && p.status === "entregue") acao = `<form id="f-liq" class="grade">
+      <p class="largo">Confira no registro a chegada dos ${t(p.quantidade)} créditos e a nota fiscal (Lei 4.320, art. 63).</p>
+      <label>Nota fiscal<input name="nota_fiscal" required></label>
+      <label class="opcao largo"><input type="checkbox" name="conferido"> Conferi a entrega dos créditos e a nota fiscal</label>
+      <div class="acoes largo"><button type="submit" class="botao">Atestar liquidação</button></div><p class="erro-campo largo"></p></form>`;
+  if (doOrgao && pp === "elaborador" && p.status === "liquidado") acao = `<form id="f-pag" class="grade">
+      <label>Ordem bancária ou documento<input name="referencia" required></label><label>Data<input name="data" type="date" required></label>
+      <div class="acoes largo"><button type="submit" class="botao">Registrar pagamento</button></div><p class="erro-campo largo"></p></form>`;
+  const cancelavel = doOrgao && pp === "elaborador" && ["rascunho", "instruido", "empenhado"].includes(p.status);
+  conteudo.innerHTML = `<p><a href="#/pedidos">Voltar aos pedidos</a></p>
+    <h1>Pedido de compra nº ${p.id}</h1>
+    <p class="introducao">${situacaoPedido(p.status)} · ${esc(p.orgao)} · fornecedor ${esc(p.fornecedor)}</p>
+    <ol class="trilha seis" aria-label="Etapas da despesa">${etapas}</ol>
+    ${p.status === "cancelado" ? `<blockquote class="parecer"><strong>Cancelado:</strong> ${esc(p.motivo_cancelamento)}</blockquote>` : ""}
+    <div class="colunas"><section class="bloco"><h2>Objeto e valores</h2>
+      <p>${t(p.quantidade)} tCO2e · ${esc(p.projeto)} (${esc(p.municipio)}/${esc(p.uf)}) · ${esc(p.certificadora || ROTULO_ATIVO[p.tipo_ativo])}, safra ${p.safra}</p>
+      <table><tbody><tr><td>Créditos (${t(p.quantidade)} × ${brl(p.preco_unitario)})</td><td class="num">${brl(p.valor_creditos)}</td></tr>
+      <tr><td>Taxa da plataforma (${t(p.taxa_percentual)}%)</td><td class="num">${brl(p.valor_taxa)}</td></tr>
+      <tr><td><strong>Total</strong></td><td class="num"><strong>${brl(p.valor_total)}</strong></td></tr></tbody></table>
+      <div class="acoes" style="margin-top:1rem"><button type="button" class="botao secundario" id="b-tr">Minuta de TR e justificativa de preço</button>
+        ${p.status === "pago" && p.inventario_id && doOrgao ? `<a class="botao" href="#/inventarios/${p.inventario_id}">Compensar no inventário</a>` : ""}</div></section>
+    <section class="bloco"><h2>Próxima etapa</h2>${acao || `<p class="vazio">${p.status === "pago" ? "Despesa concluída." : p.status === "cancelado" ? "Pedido encerrado." : "Aguardando outra parte."}</p>`}
+      ${cancelavel ? `<form id="f-canc" class="grade" style="margin-top:1rem"><label class="largo">Motivo do cancelamento${p.status === "empenhado" ? ` <span class="ajuda">Anule também o empenho no sistema financeiro.</span>` : ""}<input name="motivo" required></label>
+        <div class="acoes largo"><button type="submit" class="botao perigo">Cancelar pedido</button></div><p class="erro-campo largo"></p></form>` : ""}</section></div>`;
+  const recarregar = () => telaPedido(id);
+  $("#b-tr").onclick = () => abrirRelatorio(`/pedidos/${id}/minuta-tr.html`).catch((e) => avisar(e.message, true));
+  aoEnviar($("#f-instr"), async (d) => { await api("POST", `/pedidos/${id}/instrucao`, d); avisar("Instrução registrada."); recarregar(); });
+  aoEnviar($("#f-emp"), async (d) => { await api("POST", `/pedidos/${id}/empenho`, d); avisar("Empenho registrado."); recarregar(); });
+  aoEnviar($("#f-liq"), async (d) => { await api("POST", `/pedidos/${id}/liquidacao`, d); avisar("Liquidação atestada."); recarregar(); });
+  aoEnviar($("#f-pag"), async (d) => { await api("POST", `/pedidos/${id}/pagamento`, d); avisar("Pagamento registrado."); recarregar(); });
+  aoEnviar($("#f-canc"), async (d) => {
+    if (!(await confirmar("Cancelar pedido?", "O pedido será encerrado e a reserva devolvida à oferta.", "Cancelar pedido"))) return;
+    await api("POST", `/pedidos/${id}/cancelamento`, d); avisar("Pedido cancelado."); recarregar();
+  });
+  const be = $("#b-entregar");
+  if (be) be.onclick = async () => {
+    if (!(await confirmar(`Entregar ${t(p.quantidade)} créditos?`, `Os créditos serão transferidos para a conta de ${p.orgao} no registro. Não é possível desfazer.`, "Entregar créditos"))) return;
+    try { await api("POST", `/pedidos/${id}/entrega`); avisar("Créditos entregues."); recarregar(); } catch (e) { avisar(e.message, true); }
+  };
+}
+
+async function telaVendas() {
+  const [regras, creds, minhas, pedidos] = await Promise.all([api("GET", "/marketplace/regras"), api("GET", "/credenciamentos"),
+    api("GET", "/ofertas/minhas"), api("GET", "/pedidos")]);
+  const atual = creds[0];
+  const hoje = new Date().toISOString().slice(0, 10);
+  const valido = atual && atual.status === "aprovado" && atual.valido_ate >= hoje;
+  const saldo = estado.eu.conta_id ? (await api("GET", `/contas/${estado.eu.conta_id}/saldo`)).lotes : [];
+  conteudo.innerHTML = `<h1>Vender créditos</h1>
+    <p class="introducao">Credenciamento aberto: qualquer empresa que cumpra os critérios pode ofertar créditos certificados a órgãos públicos. Os lotes precisam estar escriturados na sua conta, com o certificado anexado.</p>
+    <section class="bloco"><h2>Credenciamento</h2>
+      ${atual ? `<p>${valido ? `<span class="situacao aprovado">Credenciada até ${dataCurta(atual.valido_ate)}</span>` : atual.status === "em_analise" ? `<span class="situacao submetido">Em análise</span>` : atual.status === "indeferido" ? `<span class="situacao devolvido">Indeferido</span> ${esc(atual.parecer || "")}` : `<span class="situacao devolvido">Vencido</span>`}</p>` : `<p class="vazio">Sua empresa ainda não pediu credenciamento.</p>`}
+      ${!valido && atual?.status !== "em_analise" ? `<form id="f-cred" class="grade">
+        ${Object.entries(regras.criterios).map(([k, v]) => `<label class="largo">${esc(v)}<input type="file" name="doc_${k}" accept=".pdf" required></label>`).join("")}
+        <label class="opcao largo"><input type="checkbox" name="declaracao_dupla_contagem" required> Declaro que os créditos ofertados não foram usados, vendidos nem prometidos a terceiros.</label>
+        <div class="acoes largo"><button type="submit" class="botao">Pedir credenciamento</button></div><p class="erro-campo largo"></p></form>` : ""}
+    </section>
+    ${valido ? `<section class="bloco"><h2>Publicar oferta</h2>${saldo.length ? `<form id="f-oferta" class="grade">
+      <label class="largo">Lote<select name="lote_id">${saldo.filter((l) => l.tipo_ativo !== "CBE").map((l) => `<option value="${l.lote_id}">${esc(l.serial)} — ${esc(l.projeto)} (${t(l.quantidade)})</option>`).join("")}</select></label>
+      <label>Categoria<select name="categoria">${Object.entries(regras.categorias).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
+      <label>Município<input name="municipio" required></label><label>UF<input name="uf" maxlength="2" required value="MG"></label>
+      <label>Preço por tCO2e (R$)<input name="preco_unitario" type="number" step="0.01" min="0.01" required></label>
+      <label>Quantidade<input name="quantidade" type="number" min="1" required></label>
+      <div class="acoes largo"><button type="submit" class="botao">Publicar oferta</button></div><p class="erro-campo largo"></p></form>`
+      : `<p class="vazio">Nenhum lote em conta. Peça à administração a escrituração do lote emitido pela certificadora.</p>`}</section>` : ""}
+    <section class="bloco"><h2>Minhas ofertas</h2>${minhas.length ? `<div class="rolagem"><table><thead><tr><th>Lote</th><th>Local</th><th class="num">Disponível</th><th class="num">Preço</th><th>Situação</th></tr></thead><tbody>
+      ${minhas.map((o) => `<tr><td class="mono">${esc(o.serial)}</td><td>${esc(o.municipio)}/${esc(o.uf)}</td><td class="num">${t(o.quantidade_disponivel)}</td><td class="num">${brl(o.preco_unitario)}</td>
+        <td>${o.ativa ? `Ativa <button type="button" class="link perigo-texto" data-retirar="${o.id}">Retirar</button>` : "Retirada"}</td></tr>`).join("")}</tbody></table></div>` : `<p class="vazio">Nenhuma oferta.</p>`}</section>
+    <section class="bloco"><h2>Pedidos recebidos</h2>${tabelaPedidos(pedidos)}</section>`;
+  const fc = $("#f-cred");
+  aoEnviar(fc, async (d, form) => {
+    const documentos = {};
+    for (const k of Object.keys(regras.criterios)) documentos[k] = await anexoDoCampo(form, `doc_${k}`);
+    await api("POST", "/credenciamentos", { documentos, declaracao_dupla_contagem: d.declaracao_dupla_contagem });
+    avisar("Pedido de credenciamento enviado."); telaVendas();
+  });
+  aoEnviar($("#f-oferta"), async (d) => { await api("POST", "/ofertas", { ...d, lote_id: Number(d.lote_id) }); avisar("Oferta publicada."); telaVendas(); });
+  conteudo.querySelectorAll("[data-retirar]").forEach((b) => (b.onclick = async () => {
+    try { await api("DELETE", `/ofertas/${b.dataset.retirar}`); avisar("Oferta retirada."); telaVendas(); } catch (e) { avisar(e.message, true); }
+  }));
+}
+
+async function telaCredenciamentos() {
+  const [regras, lista] = await Promise.all([api("GET", "/marketplace/regras"), api("GET", "/credenciamentos")]);
+  conteudo.innerHTML = `<h1>Credenciamentos</h1>
+    <p class="introducao">Análise objetiva (Lei 14.133, art. 79): aprove se, e somente se, todos os critérios forem atendidos. A aprovação vale por 12 meses. Indeferimento exige parecer.</p>
+    ${lista.map((c) => {
+      const docs = JSON.parse(c.documentos);
+      return `<section class="bloco"><h2>${esc(c.empresa)} <span class="memoria mono">${esc(c.cnpj)}</span></h2>
+      <p>${c.status === "em_analise" ? `<span class="situacao submetido">Em análise</span>` : c.status === "aprovado" ? `<span class="situacao aprovado">Aprovado até ${dataCurta(c.valido_ate)}</span>` : `<span class="situacao devolvido">Indeferido</span> ${esc(c.parecer || "")}`}</p>
+      ${c.status === "em_analise" ? `<form class="grade f-analise" data-id="${c.id}">
+        ${Object.entries(regras.criterios).map(([k, v]) => `<label class="opcao largo"><input type="checkbox" name="${k}"> ${esc(v)} · <button type="button" class="link" data-baixar="${docs[k]}" data-nome="${k}.pdf">ver documento</button></label>`).join("")}
+        <label class="largo">Parecer <span class="ajuda">Obrigatório se algum critério não for atendido</span><textarea name="parecer"></textarea></label>
+        <div class="acoes largo"><button type="submit" class="botao">Concluir análise</button></div><p class="erro-campo largo"></p></form>` : ""}</section>`;
+    }).join("") || `<section class="bloco"><p class="vazio">Nenhum pedido de credenciamento.</p></section>`}`;
+  conteudo.querySelectorAll("[data-baixar]").forEach((b) => (b.onclick = () => baixar(`/anexos/${b.dataset.baixar}`, b.dataset.nome).catch((e) => avisar(e.message, true))));
+  conteudo.querySelectorAll(".f-analise").forEach((f) => aoEnviar(f, async (d) => {
+    const criterios = Object.fromEntries(Object.keys(regras.criterios).map((k) => [k, !!d[k]]));
+    const r = await api("POST", `/credenciamentos/${f.dataset.id}/analise`, { criterios, parecer: d.parecer || null });
+    avisar(r.status === "aprovado" ? "Credenciamento aprovado." : "Credenciamento indeferido."); telaCredenciamentos();
+  }));
+}
+
 // ---------------------------------------------------------------- transparência e verificação pública
 async function telaTransparencia() {
   const [aud, canc, orgs] = await Promise.all([api("GET", "/registro/auditoria"), api("GET", "/registro/cancelamentos"), api("GET", "/publico/organizacoes")]);
@@ -913,6 +1119,8 @@ async function navegar() {
       inventarios: () => (a ? telaInventario(Number(a)) : telaInventarios()),
       unidades: telaUnidades, terceirizadas: telaTerceirizadas, contratos: () => telaContrato(Number(a)),
       registro: telaRegistro, cadastros: telaCadastros, auditoria: telaAuditoria,
+      catalogo: telaCatalogo, pedidos: () => (a ? telaPedido(Number(a)) : telaPedidos()),
+      vendas: telaVendas, credenciamentos: telaCredenciamentos,
       verificar: () => telaVerificar(a, decodeURIComponent(b || "")),
     };
     await (telas[rota] || telaInicio)();

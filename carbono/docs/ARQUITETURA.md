@@ -37,6 +37,7 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | `registro.py` | Lotes de créditos, transferência, cancelamento, livro-razão encadeado, certificado por hash |
 | `compensacao.py` | Plano e execução da compensação voluntária e da conciliação SBCE |
 | `relatorio.py` | Relatório HTML para impressão em PDF e planilha XLSX |
+| `marketplace.py` | Credenciamento, ofertas, catálogo, pedido no rito da despesa pública, carteira, minuta de TR |
 | `api.py` | Rotas REST e páginas estáticas em `/painel` |
 | `demo.py` | Cenário fictício completo |
 | `web/` | Painel (`index.html`, `app.css`, `app.js`) |
@@ -54,6 +55,10 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | Notificação formal | | ✓ | | | | | | |
 | Compensar (cancelar créditos) | ✓ | | conta própria | | | | | |
 | Escriturar lotes, cadastrar, publicar fatores | | | | | | ✓ | | |
+| Pedir credenciamento, ofertar, entregar pedido | | | ✓ (vendedor) | | | | | |
+| Analisar credenciamento | | | | | | ✓ | | |
+| Abrir pedido, instruir, empenhar, pagar, cancelar | ✓ | | | | | | | |
+| Atestar liquidação | | ✓ | | | | | | |
 | Trilha de auditoria | | | | | | ✓ | ✓ | |
 | Verificar selo ou certificado, painel público | | | | | | | | ✓ |
 
@@ -72,7 +77,8 @@ O auditor não grava nada. As funções de escrita checam o papel, e o upload re
 - **Livro-razão:** cada movimento guarda o hash do anterior, e `verificar_cadeia` recalcula tudo.
 - **Crédito voluntário:** sem `certificadora` e `certificado_anexo_id` não pode ser escriturado. Cancelado, exige `registro_externo_ref` (CHECK no esquema).
 - **Saldo:** nunca fica negativo, e um lote cancelado não volta a circular. Transferências e cancelamentos usam `BEGIN IMMEDIATE` e chave de idempotência.
-- **Versão do esquema:** banco de outra versão é recusado com `EsquemaIncompativel` (não há migração automática no MVP).
+- **Pedido de compra:** o banco recusa estados sem os dados da etapa (CHECKs): não há empenho sem número, entrega sem lote, liquidação sem nota fiscal e fiscal, pagamento sem referência, nem empenho menor que o total. O empenho reserva a quantidade da oferta; o cancelamento devolve.
+- **Versão do esquema:** banco de outra versão (hoje 3) é recusado com `EsquemaIncompativel` (não há migração automática no MVP).
 
 ## 5. Modelo de dados (resumo)
 
@@ -83,6 +89,9 @@ organizacao ─┬─ usuario (papel)            fator_emissao (codigo, versao, 
              │                                          └─ evento_mrv (trilha de aprovação)
              ├─ meta (ano_base, ano_alvo, %)
              ├─ conta ─ lote (tipo_ativo, certificadora, status, registro_externo_ref) ─ movimento (hash encadeado)
+             ├─ credenciamento (status, documentos, criterios, valido_ate)
+             ├─ oferta (lote_id, categoria, uf, preco_unitario, quantidade_disponivel)
+             ├─ pedido (oferta_id, quantidade, valores, taxa, status, processo, empenho, nota_fiscal, pagamento)
              └─ contrato (orgao_id, fornecedor_id, vigência, clausula_relato, dia_limite)
                    ├─ lancamento_fornecedor (ano, mes, fator_id, anexo_id, lancado_pelo_fiscal)
                    ├─ acao_fornecedor (anexo obrigatório)
@@ -101,7 +110,7 @@ Correspondência com o modelo do prompt CarbonMG:
 | `EmissionEntry` | `atividade` e `lancamento_fornecedor` |
 | `EmissionFactor` | `fator_emissao`, versionado |
 | `CreditLot` | `lote` |
-| `Purchase` | `movimento` (o fluxo de compra pública fica para a fase 2) |
+| `Purchase` | `pedido` (rito da despesa pública) + `movimento` (entrega no registro) |
 | `Score` | `score_fornecedor` |
 | `Project` | fica para a fase 3 |
 

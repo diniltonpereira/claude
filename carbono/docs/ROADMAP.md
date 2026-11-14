@@ -2,7 +2,7 @@
 
 Este documento registra o que foi aproveitado da especificação "Prompt mestre CarbonMG", o que foi ajustado por razão jurídica e o que falta.
 
-## 1. Já implementado (versão 0.2)
+## 1. Já implementado (versões 0.2 e 0.3)
 
 | Item da especificação | Situação |
 | --- | --- |
@@ -27,6 +27,11 @@ Este documento registra o que foi aproveitado da especificação "Prompt mestre 
 | Trilha: quem, quando, IP, versão anterior | Feito |
 | Perfis: admin, gestor, fiscal, terceirizada, auditor, público | Feito, mais verificador e moderador para a segregação de funções |
 | Cadastro com CNPJ e código IBGE | Feito (CNES pode ir no identificador da unidade) |
+| Catálogo de créditos certificados com filtros (só MG, por categoria) | Feito (0.3), com credenciamento aberto |
+| Simulação de custo, minuta de TR e justificativa de preço | Feito (0.3); minuta neutra com aviso de controle jurídico (art. 53) |
+| Fluxo empenho > entrega > pagamento | Feito (0.3) na ordem legal, com liquidação pelo fiscal |
+| Carteira do órgão: compensado, saldo a compensar, histórico | Feito (0.3) |
+| Taxa do marketplace transparente | Feito (0.3): parametrizável e exibida em simulação, pedido e TR |
 
 ## 2. Ajustes jurídicos em relação à especificação
 
@@ -45,7 +50,10 @@ Este documento registra o que foi aproveitado da especificação "Prompt mestre 
 
 ## 3. Próximas fases
 
-### Fase 2 — Créditos e compra pública (alvo: 90 dias)
+### Fase 2 — Créditos e compra pública: concluída na versão 0.3, com pendências
+Pendências: pagamento por intermediador regulado para compradores privados (PIX/boleto), revalidação periódica das certidões do vendedor, integração com o sistema financeiro do ente (empenho e ordem bancária hoje são registrados à mão) e nota fiscal da taxa.
+
+Escopo original:
 - Catálogo de lotes com **credenciamento aberto** de fornecedores e critérios objetivos.
 - Filtros: projetos em MG, REDD+, energia.
 - Fluxo de despesa pública:

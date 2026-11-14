@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from datetime import date
 
-from . import anexos, compensacao, mrv, painel, registro, terceirizadas
+from . import anexos, compensacao, marketplace, mrv, painel, registro, terceirizadas
 from .banco import conectar
 from .enquadramento import checar_projeto_publico, enquadrar_operador, fase_em
 
@@ -133,6 +133,33 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
     selo = terceirizadas.emitir_selo(c, fiscal, cid, hoje)
     terceirizadas.rotina_diaria(c, hoje)
 
+    # ------------------------------------------------ compra de créditos pelo rito da despesa pública
+    vend_org = ins("INSERT INTO organizacao (nome,cnpj,tipo) VALUES ('Carbono Sertão Ltda. (fictícia)','66666666000191','empresa')")
+    vend = ins("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('Ivo (Carbono Sertão)','fornecedor',?)", vend_org)
+    cred = marketplace.solicitar_credenciamento(
+        c, vend, documentos={k: _pdf(c, vend, f"Certidão {k}") for k in marketplace.CRITERIOS},
+        declaracao_dupla_contagem=True)
+    marketplace.analisar_credenciamento(c, reg, cred, criterios={k: True for k in marketplace.CRITERIOS}, hoje=hoje)
+    conta_v = registro.abrir_conta(c, vend_org)
+    ofertas = []
+    for serial, proj, cat, mun, uf, preco, qtd in [
+            (f"VCS-1111-{ano}-002000", "Biogás de aterro — Norte de Minas (fictício)", "residuos_biogas", "Montes Claros", "MG", 38.0, 2_000),
+            (f"VCS-2222-{ano}-003000", "REDD+ Amazônia (fictício)", "redd", "Paragominas", "PA", 29.0, 3_000)]:
+        lote = registro.emitir(c, reg, conta_id=conta_v, tipo_ativo="VOLUNTARIO", projeto=proj, metodologia="VM0000",
+                               certificadora="Verra", certificado_anexo_id=_pdf(c, reg, f"Certificado {serial}"),
+                               safra=ano, quantidade=qtd, serial=serial)["lote_id"]
+        ofertas.append(marketplace.publicar_oferta(c, vend, lote_id=lote, categoria=cat, municipio=mun, uf=uf,
+                                                   preco_unitario=preco, quantidade=qtd, hoje=hoje))
+    ped_pago = marketplace.criar_pedido(c, elab, oferta_id=ofertas[0], quantidade=40, inventario_id=inv, hoje=hoje)
+    marketplace.instruir(c, elab, ped_pago, processo=f"SEI 0000.01.0000123/{hoje.year}-00")
+    marketplace.registrar_empenho(c, elab, ped_pago, numero=f"{hoje.year}NE000101", data=hoje.isoformat(), valor=1_672.0)
+    marketplace.entregar(c, vend, ped_pago)
+    marketplace.liquidar(c, fiscal, ped_pago, nota_fiscal="NFS-e 000457", conferido=True)
+    marketplace.registrar_pagamento(c, elab, ped_pago, referencia=f"{hoje.year}OB000777", data=hoje.isoformat())
+    ped_aberto = marketplace.criar_pedido(c, elab, oferta_id=ofertas[0], quantidade=60, inventario_id=inv, hoje=hoje)
+    marketplace.instruir(c, elab, ped_aberto, processo=f"SEI 0000.01.0000124/{hoje.year}-00")
+    marketplace.registrar_empenho(c, elab, ped_aberto, numero=f"{hoje.year}NE000102", data=hoje.isoformat(), valor=2_508.0)
+
     # ------------------------------------------------ concessionária: enquadramento por instalação (art. 30)
     inv_s = mrv.criar_inventario(c, elab_san, sanea, ano)
     for nome, gas, q, kw in [("Aterro sanitário Leste", "CH4", 1_150, {}),
@@ -164,8 +191,10 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
             parceria_privada=True, licitacao=False, anuencia_gestor_area=True),
         "concessionaria": {"faixa": op["faixa_sbce"], "base_conciliacao": op["base_conciliacao_tco2e"],
                            "deficit_de_cbe": concil["deficit"]},
+        "compra_de_creditos": {"pedido_pago": ped_pago, "pedido_aguardando_entrega": ped_aberto,
+                               "carteira": marketplace.carteira(c, pref)},
         "livro_razao": registro.verificar_cadeia(c),
         "usuarios": {"registrador": reg, "gestora_prefeitura": elab, "verificador": verif, "moderadora": mod,
                      "concessao_florestal": gest_flor, "concessionaria": elab_san, "fiscal": fiscal,
-                     "auditor": auditor, "terceirizada": forn},
+                     "auditor": auditor, "terceirizada": forn, "vendedora_creditos": vend},
     }
