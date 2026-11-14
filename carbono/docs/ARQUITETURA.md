@@ -40,6 +40,7 @@ A escolha é deliberadamente simples. As regras não dependem do framework web: 
 | `projetos.py` | Projetos de geração: cadastro, funil com checklist e evidência, parceria, travas dos arts. 43, 47 e 49 |
 | `acesso.py` | Sessões (cookie e hash), CSRF, senha scrypt, TOTP, bloqueio, convites, gov.br (OIDC com PKCE), termos e direitos LGPD |
 | `operacao.py` | Criação do administrador, backup e restauração verificados |
+| `faturas.py` | Leitura de faturas de energia (PDF e planilha), análise (unidade, duplicidade, ano) e lançamento no escopo 2; interface `FonteFaturas` para futura API da distribuidora |
 | `marketplace.py` | Credenciamento, ofertas, catálogo, pedido no rito da despesa pública, carteira, minuta de TR |
 | `api.py` | Rotas REST e páginas estáticas em `/painel` |
 | `demo.py` | Cenário fictício completo |
@@ -82,7 +83,7 @@ O auditor não grava nada. As funções de escrita checam o papel, e o upload re
 - **Crédito voluntário:** sem `certificadora` e `certificado_anexo_id` não pode ser escriturado. Cancelado, exige `registro_externo_ref` (CHECK no esquema).
 - **Saldo:** nunca fica negativo, e um lote cancelado não volta a circular. Transferências e cancelamentos usam `BEGIN IMMEDIATE` e chave de idempotência.
 - **Pedido de compra:** o banco recusa estados sem os dados da etapa (CHECKs): não há empenho sem número, entrega sem lote, liquidação sem nota fiscal e fiscal, pagamento sem referência, nem empenho menor que o total. O empenho reserva a quantidade da oferta; o cancelamento devolve.
-- **Versão do esquema (hoje 5):** bancos a partir da versão 2 são migrados automaticamente ao conectar (`banco.migrar`, numa transação). Toda mudança em tabela existente precisa de uma função em `MIGRACOES`. Versões mais antigas são recusadas com `EsquemaIncompativel`.
+- **Versão do esquema (hoje 7):** bancos a partir da versão 2 são migrados automaticamente ao conectar (`banco.migrar`, numa transação). Toda mudança em tabela existente precisa de uma função em `MIGRACOES`. Versões mais antigas são recusadas com `EsquemaIncompativel`.
 
 ## 5. Modelo de dados (resumo)
 

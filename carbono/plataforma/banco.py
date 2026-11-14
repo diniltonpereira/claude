@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 6
+VERSAO_ESQUEMA = 7
 VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS instalacao (
     municipio_uf    TEXT,
     agropecuaria_primaria   INTEGER NOT NULL DEFAULT 0 CHECK (agropecuaria_primaria IN (0,1)),
     residuos_neutralizacao  INTEGER NOT NULL DEFAULT 0 CHECK (residuos_neutralizacao IN (0,1)),
+    uc_energia      TEXT,                   -- nº da instalação na distribuidora (CEMIG) para importar faturas
     UNIQUE (organizacao_id, nome)
 );
 CREATE INDEX IF NOT EXISTS ix_instalacao_org ON instalacao(organizacao_id);
@@ -434,6 +435,9 @@ CREATE TABLE IF NOT EXISTS parceria (
     CHECK (assinatura = 'minuta' OR assinatura_ref IS NOT NULL)
 );
 
+-- ---------------------------------------------------------------- faturas de energia (versão 7)
+CREATE UNIQUE INDEX IF NOT EXISTS ux_instalacao_uc ON instalacao(organizacao_id, uc_energia) WHERE uc_energia IS NOT NULL;
+
 -- ---------------------------------------------------------------- fila offline (versão 6)
 CREATE UNIQUE INDEX IF NOT EXISTS ux_atividade_chave ON atividade(chave_idempotencia) WHERE chave_idempotencia IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_lancamento_chave ON lancamento_fornecedor(chave_idempotencia)
@@ -513,9 +517,14 @@ def _migrar_5_para_6(con: sqlite3.Connection) -> None:
             con.execute(f"ALTER TABLE {tabela} ADD COLUMN chave_idempotencia TEXT")
 
 
+def _migrar_6_para_7(con: sqlite3.Connection) -> None:
+    if "uc_energia" not in {r["name"] for r in con.execute("PRAGMA table_info(instalacao)")}:
+        con.execute("ALTER TABLE instalacao ADD COLUMN uc_energia TEXT")
+
+
 # Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
 # próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
-MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6}
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7}
 
 
 def migrar(con: sqlite3.Connection, caminho: str = "") -> int:

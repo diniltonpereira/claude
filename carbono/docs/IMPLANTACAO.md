@@ -146,7 +146,24 @@ O banco anterior fica salvo com o sufixo `.antes-da-restauracao`.
   - em aparelho compartilhado, oriente o usuário a sair ao terminar.
 - **Atualização do app:** o service worker usa o app guardado e busca a nova versão em segundo plano, então a atualização aparece na abertura seguinte. Ao mudar arquivos do painel, troque `VERSAO` em `plataforma/web/sw.js` para descartar o cache antigo de imediato.
 
-## 8. Modo demonstração
+## 8. Faturas de energia (CEMIG)
+
+- **Não há API pública da CEMIG para faturas.** A plataforma lê o PDF da fatura e planilhas com a relação de contas. Se o órgão obtiver acesso por API ou arquivo em lote pelo canal de grandes clientes, implemente `faturas.FonteFaturas` e reutilize `faturas.lancar`.
+- **Preparação:** em "Unidades e instalações", informe em cada prédio o nº da instalação na CEMIG (UC). Assim as faturas caem automaticamente na unidade certa.
+- **PDF:** o sistema lê a instalação, o mês de referência e o consumo, mostra o trecho de origem e o grau de confiança, e **a pessoa confere antes de lançar**. Regras de leitura:
+  - o "consumo médio diário" é ignorado;
+  - no grupo A, os consumos na ponta e fora de ponta são somados;
+  - nas linhas de TE e TUSD, que repetem a quantidade, usa-se a maior, sem somar;
+  - em unidade com geração distribuída, há um aviso para lançar o consumo **registrado** (energia retirada da rede).
+- **PDF escaneado** (imagem, sem texto) não é lido: digite os valores no formulário de lançamento.
+- **Layout novo:** se a CEMIG mudar o layout e a leitura falhar, ajuste as expressões em `faturas.PADROES` e acrescente um caso em `tests/test_faturas.py` com o texto da fatura nova.
+- **Planilha (CSV ou XLSX):**
+  - colunas obrigatórias: Instalação (ou UC), Referência (mês/ano) e Consumo (kWh);
+  - a prévia mostra cada linha como pronta, sem unidade vinculada, já lançada ou com erro;
+  - o lançamento é tudo ou nada.
+- **Sem duplicidade:** a mesma UC no mesmo mês não entra duas vezes no inventário. O PDF ou a planilha fica como comprovante (SHA-256).
+
+## 9. Modo demonstração
 `python -m plataforma demo --banco demo.db` e `python -m plataforma servir --banco demo.db --demo`.
 
 Nesse modo, a entrada é pelo número do usuário (cabeçalho `X-Usuario-Id`), sem senha. **Nunca use em produção.** O modo produção é o padrão e ignora esse cabeçalho.

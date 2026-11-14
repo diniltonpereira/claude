@@ -69,7 +69,7 @@ Escopo original:
 
 ### Fase 3 — Projetos, documentos e campo: projetos concluídos na versão 0.4
 Feito: cadastro georreferenciado (ponto), funil de 7 etapas com checklist e evidência, travas legais (arts. 43, 47 e 49) e parceria com divisão de créditos e registro da assinatura.
-Pendente: polígono da área (GeoJSON) e mapa embutido, integração real de assinatura (gov.br/Clicksign), modelos DOCX, PNCP, CEMIG, login gov.br, PostgreSQL e PWA offline.
+Pendente: polígono da área (GeoJSON) e mapa embutido, integração real de assinatura (gov.br/Clicksign), modelos DOCX e PNCP. Login gov.br (0.5), PWA offline (0.6) e faturas CEMIG (0.7) já foram feitos; PostgreSQL foi adiado com critério em IMPLANTACAO.md.
 
 Escopo original:
 - Projetos de geração com:
@@ -79,7 +79,7 @@ Escopo original:
 - Contratos de cessão ou parceria com divisão percentual e assinatura eletrônica (gov.br ou Clicksign). Projeto público com parceiro privado só com licitação.
 - Modelos de ETP, TR e relatório de sustentabilidade em DOCX editável, para compras do órgão que não sejam a contratação da própria plataforma.
 - Integração com o PNCP (publicação feita pelo órgão).
-- Importação de faturas CEMIG e planilhas.
+- ~~Importação de faturas CEMIG e planilhas~~ (feito na 0.7: PDF com conferência e planilha; API depende da CEMIG).
 - ~~Login gov.br~~ (feito na 0.5, aguardando credenciais do órgão), PostgreSQL (adiado, com critério em IMPLANTACAO.md) e ~~PWA com lançamento offline e sincronização~~ (feito na 0.6).
 
 ### Fase 4 — SBCE e expansão (alvo: 12 meses)

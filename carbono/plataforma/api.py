@@ -23,9 +23,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (acesso, anexos, auditoria, compensacao, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+from . import (acesso, anexos, auditoria, compensacao, faturas, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
                terceirizadas)
-from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar
+from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar, transacao
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
                             checar_projeto_publico, checar_reparticao_comunidade, enquadrar_operador,
                             fase_em)
@@ -111,6 +111,7 @@ class InstalacaoIn(BaseModel):
     municipio_uf: str | None = None
     agropecuaria_primaria: bool = False      # art. 1º, § 2º
     residuos_neutralizacao: bool = False     # art. 30, § 3º
+    uc_energia: str | None = Field(default=None, max_length=20)  # nº da instalação na distribuidora
 
 
 class TransicaoIn(BaseModel):
@@ -327,6 +328,28 @@ class AssinaturaIn(BaseModel):
 class UsuarioEdicaoIn(BaseModel):
     email: str | None = Field(default=None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     cpf: str | None = None
+
+
+class FaturaIn(BaseModel):
+    anexo_id: int
+    uc: str = Field(min_length=1, max_length=20)
+    ano: int = Field(ge=2000, le=2100)
+    mes: int = Field(ge=1, le=12)
+    kwh: float = Field(ge=0)
+    instalacao_id: int | None = None
+
+
+class LinhaFaturaIn(BaseModel):
+    uc: str
+    ano: int
+    mes: int = Field(ge=1, le=12)
+    kwh: float = Field(ge=0)
+    instalacao_id: int | None = None
+
+
+class LoteFaturasIn(BaseModel):
+    anexo_id: int
+    linhas: list[LinhaFaturaIn] = Field(min_length=1, max_length=2000)
 
 
 class LoginIn(BaseModel):
@@ -822,6 +845,46 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     def remover_ativ(aid: int, u=Depends(usuario), c=Depends(db)):
         mrv.remover_atividade(c, u["id"], aid)
         return {"ok": True}
+
+    # ---------------- faturas de energia ----------------
+    async def _ler_arquivo(arquivo: UploadFile, tipos: tuple[str, ...]) -> tuple[str, str, bytes]:
+        nome = arquivo.filename or "arquivo"
+        ext = nome.lower().rsplit(".", 1)[-1] if "." in nome else ""
+        mime = {"pdf": "application/pdf", "csv": "text/csv",
+                "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}.get(ext, "")
+        if ext not in tipos:
+            raise ErroNegocio(f"Envie um arquivo {' ou '.join(t.upper() for t in tipos)}.")
+        return nome, mime, await arquivo.read(anexos.TAMANHO_MAXIMO + 1)
+
+    @app.post("/inventarios/{iid}/faturas/leitura")
+    async def ler_fatura(iid: int, arquivo: UploadFile = File(...), u=Depends(usuario), c=Depends(db)):
+        """Lê o PDF da fatura e devolve os valores para CONFERÊNCIA (nada é lançado)."""
+        nome, mime, conteudo = await _ler_arquivo(arquivo, ("pdf",))
+        leitura = faturas.ler_fatura(faturas.extrair_texto_pdf(conteudo))
+        item = {"uc": leitura.uc, "ano": leitura.ano, "mes": leitura.mes, "kwh": leitura.kwh, "erro": None}
+        analise = faturas.analisar(c, u["id"], iid, [item])[0] if None not in (leitura.uc, leitura.ano, leitura.mes, leitura.kwh) else None
+        anexo = anexos.salvar(c, u["id"], nome, mime, conteudo)
+        return {"anexo_id": anexo["id"], "leitura": leitura.como_dict(), "analise": analise}
+
+    @app.post("/inventarios/{iid}/faturas", status_code=201)
+    def lancar_fatura(iid: int, d: FaturaIn, u=Depends(usuario), c=Depends(db)):
+        return {"id": faturas.lancar(c, u["id"], iid, **d.model_dump())}
+
+    @app.post("/inventarios/{iid}/faturas/planilha")
+    async def ler_planilha(iid: int, arquivo: UploadFile = File(...), u=Depends(usuario), c=Depends(db)):
+        """Lê a planilha de faturas e classifica cada linha (nada é lançado)."""
+        nome, mime, conteudo = await _ler_arquivo(arquivo, ("csv", "xlsx"))
+        linhas = faturas.analisar(c, u["id"], iid, faturas.ler_planilha(nome, conteudo))
+        anexo = anexos.salvar(c, u["id"], nome, mime, conteudo)
+        return {"anexo_id": anexo["id"], "linhas": linhas}
+
+    @app.post("/inventarios/{iid}/faturas/lote", status_code=201)
+    def lancar_lote(iid: int, d: LoteFaturasIn, u=Depends(usuario), c=Depends(db)):
+        """Lança as linhas confirmadas. Tudo ou nada: se uma falhar, nenhuma é gravada."""
+        with transacao(c):
+            ids = [faturas.lancar(c, u["id"], iid, anexo_id=d.anexo_id, origem="planilha", **l.model_dump())
+                   for l in d.linhas]
+        return {"lancadas": len(ids)}
 
     @app.post("/inventarios/{iid}/importar-terceirizadas")
     def importar(iid: int, u=Depends(usuario), c=Depends(db)):

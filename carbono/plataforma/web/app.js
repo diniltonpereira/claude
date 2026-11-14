@@ -595,7 +595,7 @@ async function telaInventario(id) {
           <thead><tr><th>Atividade</th><th>Comprovante</th><th class="num">tCO2e</th></tr></thead><tbody>
           ${inv.atividades.map((a) => linhaAtividade(a, editavel)).join("")}</tbody></table></div>`
           : `<p class="vazio">Nenhuma atividade lançada.</p>`}</section>
-        ${editavel ? formAtividade(instalacoes) : ""}
+        ${editavel ? formFaturas() + formAtividade(instalacoes) : ""}
         <section class="bloco"><h2>Escopo 1 por instalação</h2>${inv.por_instalacao.length ? `<div class="rolagem"><table>
           <thead><tr><th>Instalação ou fonte</th><th class="num">Emissões</th><th class="num">Remoções</th></tr></thead><tbody>
           ${inv.por_instalacao.map((i) => `<tr><td>${esc(i.nome)}</td><td class="num">${t(i.escopo1)}</td><td class="num">${t(i.remocoes)}</td></tr>`).join("")}
@@ -614,7 +614,7 @@ async function telaInventario(id) {
     </div>`;
 
   ligarAcoesInventario(inv);
-  if (editavel) ligarFormAtividade(id);
+  if (editavel) { ligarFormAtividade(id); ligarFaturas(inv, instalacoes); }
   aoEnviar($("#f-enq"), async (d) => mostrarEnquadramento(await api("POST", `/inventarios/${id}/enquadramento`, d)));
   if ($("#f-comp")) ligarCompensacao(inv);
 }
@@ -665,6 +665,80 @@ function ligarAcoesInventario(inv) {
     try { await api("DELETE", `/atividades/${b.dataset.remover}`); avisar("Atividade excluída."); telaInventario(id); }
     catch (e) { avisar(e.message, true); }
   }));
+}
+
+// ---------------------------------------------------------------- faturas de energia
+async function enviarMultipart(caminho, arquivo) {
+  const fd = new FormData();
+  fd.append("arquivo", arquivo);
+  const r = await buscarRede(caminho, { method: "POST", headers: cabecalhos(false), body: fd });
+  if (!r.ok) throw await lerErro(r);
+  return r.json();
+}
+
+const ROTULO_SITUACAO_FATURA = { pronto: "Pronto", sem_unidade: "Pronto, sem unidade vinculada", duplicado: "Já lançada", erro: "Com erro" };
+
+function formFaturas() {
+  return `<section class="bloco"><h2>Importar faturas de energia</h2>
+    <p class="memoria">Envie o PDF da fatura da CEMIG (ou de outra distribuidora) ou uma planilha com várias contas. O sistema lê a instalação, o mês e o consumo; você confere antes de lançar. O arquivo vira o comprovante.</p>
+    <form id="f-fat-pdf" class="grade"><label class="largo">Fatura em PDF<input type="file" name="arquivo" accept=".pdf" required></label>
+      <div class="acoes largo"><button type="submit" class="botao secundario">Ler fatura</button></div><p class="erro-campo largo"></p></form>
+    <div id="fat-revisao"></div>
+    <form id="f-fat-plan" class="grade" style="margin-top:1rem"><label class="largo">Planilha de contas (CSV ou Excel) <span class="ajuda">Colunas: Instalação (UC), Referência (mês/ano) e Consumo (kWh)</span><input type="file" name="arquivo" accept=".csv,.xlsx" required></label>
+      <div class="acoes largo"><button type="submit" class="botao secundario">Ler planilha</button></div><p class="erro-campo largo"></p></form>
+    <div id="fat-planilha"></div></section>`;
+}
+
+function ligarFaturas(inv, instalacoes) {
+  const opcoesUnidade = (sel) => `<option value="">Sem vínculo</option>${instalacoes.map((i) => `<option value="${i.id}"${i.id === sel ? " selected" : ""}>${esc(i.nome)}</option>`).join("")}`;
+  aoEnviar($("#f-fat-pdf"), async (_, form) => {
+    const r = await enviarMultipart(`/inventarios/${inv.id}/faturas/leitura`, form.elements.arquivo.files[0]);
+    const l = r.leitura, a = r.analise;
+    const duplicada = a?.situacao === "duplicado";
+    $("#fat-revisao").innerHTML = `<form id="f-fat-conf" class="grade revisao">
+      <p class="largo"><strong>Confira os valores lidos</strong> <span class="situacao ${l.confianca === "alta" ? "aprovado" : l.confianca === "media" ? "submetido" : "devolvido"}">Confiança ${esc(l.confianca)}</span></p>
+      ${Object.entries(l.trechos).map(([k, v]) => `<p class="memoria largo">Lido na fatura (${esc({ uc: "instalação", referencia: "referência", consumo: "consumo" }[k] || k)}): “${esc(v)}”</p>`).join("")}
+      ${l.avisos.length ? `<ul class="alertas largo">${l.avisos.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${duplicada ? `<p class="erro-campo largo">${esc(a.erro)}</p>` : a?.situacao === "erro" ? `<p class="erro-campo largo">${esc(a.erro)}</p>` : ""}
+      <label>Instalação (UC)<input name="uc" value="${esc(l.uc || "")}" required></label>
+      <label>Mês<select name="mes">${MESES.map((m, i) => `<option value="${i + 1}"${l.mes === i + 1 ? " selected" : ""}>${m}</option>`).join("")}</select></label>
+      <label>Ano<input name="ano" type="number" value="${l.ano || inv.ano}" required></label>
+      <label>Consumo (kWh)<input name="kwh" type="number" step="any" min="0" value="${l.kwh ?? ""}" required></label>
+      <label class="largo">Unidade<select name="instalacao_id">${opcoesUnidade(a?.instalacao_id)}</select></label>
+      <div class="acoes largo"><button type="submit" class="botao"${duplicada ? " disabled" : ""}>Lançar fatura</button>
+        <button type="button" class="botao secundario" id="b-fat-descartar">Descartar</button></div>
+      <p class="erro-campo largo"></p></form>`;
+    form.reset();
+    $("#b-fat-descartar").onclick = () => ($("#fat-revisao").innerHTML = "");
+    aoEnviar($("#f-fat-conf"), async (d) => {
+      await api("POST", `/inventarios/${inv.id}/faturas`, { anexo_id: r.anexo_id, uc: d.uc, ano: Number(d.ano), mes: Number(d.mes),
+        kwh: d.kwh, instalacao_id: d.instalacao_id ? Number(d.instalacao_id) : null });
+      avisar("Fatura lançada no escopo 2."); telaInventario(inv.id);
+    });
+  });
+  aoEnviar($("#f-fat-plan"), async (_, form) => {
+    const r = await enviarMultipart(`/inventarios/${inv.id}/faturas/planilha`, form.elements.arquivo.files[0]);
+    const validas = r.linhas.filter((l) => ["pronto", "sem_unidade"].includes(l.situacao));
+    const kwh = validas.reduce((s, l) => s + l.kwh, 0);
+    $("#fat-planilha").innerHTML = `<div class="rolagem" style="margin-top:1rem"><table>
+      <thead><tr><th class="num">Linha</th><th>UC</th><th>Mês</th><th class="num">kWh</th><th>Unidade</th><th>Situação</th></tr></thead><tbody>
+      ${r.linhas.map((l) => `<tr><td class="num">${l.linha}</td><td class="mono">${esc(l.uc || "")}</td><td>${l.mes ? MESES[l.mes - 1] + "/" + l.ano : ""}</td>
+        <td class="num">${l.kwh != null ? t(l.kwh) : ""}</td><td>${esc(l.unidade || "—")}</td>
+        <td class="${["erro", "duplicado"].includes(l.situacao) ? "faixa-regulado_conciliacao" : ""}">${esc(ROTULO_SITUACAO_FATURA[l.situacao])}${l.erro ? `<div class="memoria">${esc(l.erro)}</div>` : ""}</td></tr>`).join("")}
+      </tbody></table></div>
+      ${validas.length ? `<div class="acoes" style="margin-top:1rem"><button type="button" class="botao" id="b-fat-lote">Lançar ${validas.length} conta(s) (${t(kwh)} kWh)</button></div>
+        <p class="memoria">Linhas com erro ou já lançadas ficam de fora. O lançamento é tudo ou nada.</p>` : `<p class="vazio">Nenhuma linha pronta para lançar.</p>`}`;
+    form.reset();
+    const b = $("#b-fat-lote");
+    if (b) b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const res = await api("POST", `/inventarios/${inv.id}/faturas/lote`, { anexo_id: r.anexo_id,
+          linhas: validas.map((l) => ({ uc: l.uc, ano: l.ano, mes: l.mes, kwh: l.kwh, instalacao_id: l.instalacao_id })) });
+        avisar(`${res.lancadas} conta(s) lançada(s) no escopo 2.`); telaInventario(inv.id);
+      } catch (e) { avisar(e.message, true); b.disabled = false; }
+    };
+  });
 }
 
 function formAtividade(instalacoes) {
@@ -784,7 +858,7 @@ async function telaUnidades() {
   const lista = await api("GET", `/organizacoes/${org.id}/instalacoes`);
   const filhos = (pai) => lista.filter((i) => i.pai_id === pai);
   const arvore = (pai, nivel) => filhos(pai).map((i) => `<tr><td style="padding-left:${0.6 + nivel * 1.4}rem">${nivel ? "└ " : ""}${esc(i.nome)}</td>
-      <td>${esc(ROTULO_NATUREZA[i.natureza])}</td><td>${esc(i.identificador || "")} ${esc(i.municipio_uf || "")}</td>
+      <td>${esc(ROTULO_NATUREZA[i.natureza])}</td><td>${esc(i.identificador || "")} ${esc(i.municipio_uf || "")}${i.uc_energia ? `<div class="memoria">UC ${esc(i.uc_energia)}</div>` : ""}</td>
       <td>${i.residuos_neutralizacao ? "Resíduos com neutralização (art. 30, § 3º)" : i.agropecuaria_primaria ? "Agropecuária primária (art. 1º, § 2º)" : ""}</td></tr>`
     + arvore(i.id, nivel + 1)).join("");
   conteudo.innerHTML = `<h1>Unidades e instalações</h1>
@@ -796,6 +870,7 @@ async function telaUnidades() {
       <label>Tipo<select name="natureza"><option value="unidade">Unidade (secretaria, autarquia…)</option><option value="instalacao">Instalação (prédio, aterro, ETE…)</option><option value="fonte_movel">Fonte móvel (frota)</option></select></label>
       <label>Subordinada a<select name="pai_id"><option value="">Órgão (topo)</option>${lista.filter((i) => i.natureza !== "fonte_movel").map((i) => `<option value="${i.id}">${esc(i.nome)}</option>`).join("")}</select></label>
       <label>Identificação <span class="ajuda">Licença, CNES, CNPJ da filial…</span><input name="identificador"></label>
+      <label>Nº da instalação na CEMIG (UC) <span class="ajuda">Para importar as faturas de energia direto nesta unidade</span><input name="uc_energia" inputmode="numeric"></label>
       <label>Município/UF<input name="municipio_uf"></label>
       <label class="opcao largo"><input type="checkbox" name="residuos_neutralizacao"> Trata resíduos ou efluentes com neutralização comprovada (art. 30, § 3º)</label>
       <label class="opcao largo"><input type="checkbox" name="agropecuaria_primaria"> Produção primária agropecuária (art. 1º, § 2º)</label>

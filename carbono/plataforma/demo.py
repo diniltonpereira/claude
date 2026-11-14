@@ -51,12 +51,12 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
     auditor = ins("INSERT INTO usuario (nome,papel) VALUES ('Gil (auditor TCE)','auditor')")
 
     # ------------------------------------------------ hierarquia da prefeitura
-    def unid(nome, natureza="unidade", pai=None):
-        return mrv.criar_instalacao(c, elab, pref, nome=nome, natureza=natureza, pai_id=pai)
+    def unid(nome, natureza="unidade", pai=None, uc=None):
+        return mrv.criar_instalacao(c, elab, pref, nome=nome, natureza=natureza, pai_id=pai, uc_energia=uc)
     saude = unid("Secretaria de Saúde")
     educ = unid("Secretaria de Educação")
     obras = unid("Secretaria de Obras")
-    hospital = unid("Hospital Municipal", "instalacao", saude)
+    hospital = unid("Hospital Municipal", "instalacao", saude, uc="3012345678")  # UC fictícia da CEMIG
     escolas = unid("Escolas municipais", "instalacao", educ)
     frota = unid("Frota de obras e coleta", "fonte_movel", obras)
 

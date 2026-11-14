@@ -8,7 +8,7 @@
  * - Ao sair da conta, o app apaga o cache de consultas (LIMPAR_DADOS).
  */
 "use strict";
-const VERSAO = "carbonmg-v6";
+const VERSAO = "carbonmg-v7";
 const CACHE_APP = `${VERSAO}-app`;
 const CACHE_API = "carbonmg-api";
 const APP = ["./", "index.html", "app.css", "app.js", "offline.js", "manifest.webmanifest",

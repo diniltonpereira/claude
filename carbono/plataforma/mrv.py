@@ -61,7 +61,8 @@ def criar_inventario(con: sqlite3.Connection, usuario_id: int, organizacao_id: i
 def criar_instalacao(con: sqlite3.Connection, usuario_id: int, organizacao_id: int, *, nome: str,
                      natureza: str = "instalacao", pai_id: int | None = None,
                      identificador: str | None = None, municipio_uf: str | None = None,
-                     agropecuaria_primaria: bool = False, residuos_neutralizacao: bool = False) -> int:
+                     agropecuaria_primaria: bool = False, residuos_neutralizacao: bool = False,
+                     uc_energia: str | None = None) -> int:
     """Cadastra unidade (secretaria, hospital…), instalação (art. 2º, XV) ou fonte móvel (art. 2º, XII).
     `pai_id` monta a hierarquia órgão > unidade > prédio/instalação."""
     u = buscar(con, "usuario", usuario_id)
@@ -78,11 +79,12 @@ def criar_instalacao(con: sqlite3.Connection, usuario_id: int, organizacao_id: i
     try:
         iid = con.execute(
             """INSERT INTO instalacao (organizacao_id, pai_id, nome, natureza, identificador, municipio_uf,
-               agropecuaria_primaria, residuos_neutralizacao) VALUES (?,?,?,?,?,?,?,?)""",
+               agropecuaria_primaria, residuos_neutralizacao, uc_energia) VALUES (?,?,?,?,?,?,?,?,?)""",
             (organizacao_id, pai_id, nome, natureza, identificador, municipio_uf,
-             int(agropecuaria_primaria), int(residuos_neutralizacao))).lastrowid
+             int(agropecuaria_primaria), int(residuos_neutralizacao),
+             "".join(ch for ch in uc_energia if ch.isdigit()) if uc_energia else None)).lastrowid
     except sqlite3.IntegrityError as exc:
-        raise ErroNegocio(f"Unidade inválida ou com nome repetido: {exc}") from exc
+        raise ErroNegocio(f"Unidade inválida, com nome repetido ou UC de energia já vinculada: {exc}") from exc
     registrar(con, usuario_id, "criar", "instalacao", iid, depois={"nome": nome, "natureza": natureza,
                                                                   "pai_id": pai_id})
     return iid
