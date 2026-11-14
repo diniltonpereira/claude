@@ -151,3 +151,16 @@ Implementado em `checar_projeto_publico` e `POST /checagens/projeto-publico`.
 2. **Ato de prorrogação da fase I** e o termo inicial das fases seguintes (art. 50).
 3. **Integração** com o Registro Central (art. 23) e interoperabilidade com escrituradores (art. 15, § 2º).
 4. **Conferir** a Lei 11.284/2006 e as cláusulas das concessões florestais.
+
+## 5. Pontos da especificação CarbonMG (Minas Gerais)
+
+| Tema | Regra | Na plataforma |
+| --- | --- | --- |
+| Decreto MG 48.938/2024 | Critérios de sustentabilidade nas contratações da administração **estadual** direta, autárquica e fundacional. Não vincula municípios, que seguem a própria regulamentação da Lei 14.133 | Citado como referência, não como obrigação de prefeituras |
+| Despesa pública com créditos | Contratação (ou dispensa fundamentada), empenho prévio (Lei 4.320/1964, art. 60), entrega comprovada, liquidação (art. 63) e pagamento | Compra e pagamento ficam para a fase 2. A "entrega" será o cancelamento comprovado no registro (art. 45 da Lei 15.042) |
+| Fornecedores de créditos | Lista fechada de empresas nomeadas pode configurar direcionamento. Preferir credenciamento aberto com critérios objetivos (Lei 14.133, art. 79) | Fase 2 |
+| Conflito de interesses | A empresa da plataforma não deve elaborar o ETP ou o TR da própria contratação (Lei 14.133, arts. 7º e 14) | Não implementado de propósito |
+| Alegações ambientais | "Carbono neutro" ou "descarbonizado" sem lastro é publicidade enganosa (CDC, art. 37) | Selo "de Gestão de Emissões"; avisos no painel público e no relatório |
+| Obrigação da terceirizada | Relatar emissões e sofrer consequência por atraso exige cláusula contratual ou aditivo; usar o score como critério de licitação exige regra objetiva no edital | `clausula_relato`; score informativo |
+| Aposentadoria de crédito voluntário | Ocorre no registro da certificadora; o espelho da plataforma precisa do número dela | `registro_externo_ref` obrigatório (CHECK no banco) |
+| LGPD | Base legal e opt-in para WhatsApp e e-mail; minimizar CPF; encarregado (DPO) | Interface `Notificador` sem envio; checklist em `docs/ARQUITETURA.md` |

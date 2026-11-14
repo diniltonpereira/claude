@@ -188,7 +188,53 @@ textarea { min-height: 5rem; resize: vertical; }
 .integridade.ok { color: var(--mata); }
 .integridade.falha { color: var(--carmim); }
 
+/* Painel: barras por mês e progresso da meta */
+.barras { display: grid; grid-template-columns: repeat(12, 1fr); gap: .35rem; align-items: end; height: 10rem; margin-bottom: .75rem; }
+.barra { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; gap: .25rem; }
+.barra span { width: 100%; min-height: 2px; background: var(--mata); border-radius: 3px 3px 0 0; }
+.barra small { font-size: .75rem; color: var(--tinta-suave); }
+details summary { cursor: pointer; color: var(--mata); font-size: .9rem; margin: .5rem 0; }
+.progresso { height: .9rem; background: var(--mata-fundo); border-radius: 999px; overflow: hidden; margin: .5rem 0; }
+.progresso span { display: block; height: 100%; background: var(--mata); }
+
+/* Terceirizadas: quadro mês a mês, classes e selos */
+.meses { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .4rem; }
+.meses li { border: 1px solid var(--linha); border-left-width: 4px; border-radius: var(--raio); padding: .4rem .55rem; font-size: .85rem; }
+.meses li strong, .meses li span, .meses li small { display: block; }
+.meses li small { color: var(--tinta-suave); }
+.mes-lancado, .mes-lancado_pelo_fiscal { border-left-color: var(--mata) !important; }
+.mes-em_prazo, .mes-pendente_comprovacao { border-left-color: var(--ambar) !important; }
+.mes-inadimplente, .mes-sem_lancamento { border-left-color: var(--carmim) !important; }
+.classe { display: inline-grid; place-items: center; min-width: 1.8rem; height: 1.8rem; border-radius: 50%; font-weight: 700;
+  border: 2px solid currentColor; }
+.classe.grande { min-width: 2.6rem; height: 2.6rem; font-size: 1.3rem; vertical-align: middle; margin-right: .4rem; }
+.classe-A, .classe-B { color: var(--mata); }
+.classe-C { color: var(--ambar); }
+.classe-D { color: var(--carmim); }
+.componentes { display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem 1rem; margin: .75rem 0; }
+.componentes dt { font-size: .85rem; color: var(--tinta-suave); }
+.componentes dd { margin: 0; font-weight: 700; }
+.selos { list-style: none; padding: 0; margin: .5rem 0 0; }
+.selos li { display: flex; gap: 1rem; align-items: center; padding: .6rem 0; border-top: 1px solid var(--linha); }
+.selos img, .verificacao img { background: #fff; border-radius: 4px; padding: 2px; }
+
+/* Verificação pública */
+.verificacao { display: flex; gap: 1.25rem; align-items: center; }
+.ficha { display: grid; gap: .6rem; margin: 0 0 1rem; }
+.ficha div { display: grid; grid-template-columns: 14rem 1fr; gap: 1rem; border-bottom: 1px solid var(--linha); padding-bottom: .5rem; }
+.ficha dt { color: var(--tinta-suave); }
+.ficha dd { margin: 0; }
+
+/* Ações em linha */
+.link { background: none; border: 0; padding: 0; font: inherit; color: var(--mata); text-decoration: underline; cursor: pointer; text-align: left; }
+.perigo-texto { color: var(--carmim); font-size: .85rem; margin-top: .25rem; }
+.anexar { display: inline-block; font-weight: 700; color: var(--ambar); cursor: pointer; font-size: .9rem; }
+.anexar input { display: block; font-size: .8rem; max-width: 12rem; min-height: 0; padding: .2rem; margin-top: .2rem; }
+
 @media (max-width: 860px) {
+  .ficha div { grid-template-columns: 1fr; gap: .2rem; }
+  .verificacao { flex-direction: column; align-items: flex-start; }
+  .barras { height: 7rem; gap: .15rem; }
   .moldura { grid-template-columns: minmax(0, 1fr); }
   .menu { border-right: 0; border-bottom: 1px solid var(--linha); padding: .5rem 1rem;
     display: flex; align-items: center; gap: .25rem; overflow-x: auto; }

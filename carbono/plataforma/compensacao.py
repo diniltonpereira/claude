@@ -48,8 +48,10 @@ def compensar(con: sqlite3.Connection, usuario_id: int, inventario_id: int, *,
               tipos_aceitos: tuple[str, ...] | None = None,
               limite_crve: float = 0.0, periodo_compromisso: tuple[int, int] | None = None,
               cbe_outros_periodos: bool = False, limiar_conciliacao: float = LIMIAR_CONCILIACAO,
-              simular: bool = False,
+              simular: bool = False, registros_externos: dict[int, str] | None = None,
               chave_idempotencia: str | None = None) -> dict:
+    """`registros_externos`: {lote_id: nº da aposentadoria na certificadora} para cada lote de
+    crédito voluntário do plano (obrigatório na execução; a simulação indica quais faltam)."""
     if finalidade not in TIPOS_POR_FINALIDADE:
         raise ErroNegocio("Finalidade deve ser 'compensacao_voluntaria' ou 'conciliacao_sbce'.")
     if not 0 < percentual <= 100:
@@ -137,7 +139,8 @@ def compensar(con: sqlite3.Connection, usuario_id: int, inventario_id: int, *,
                     continue
                 usado_crve += pode
             plano.append({"lote_id": l["id"], "serial": l["serial"], "tipo_ativo": l["tipo_ativo"],
-                          "safra": l["safra"], "quantidade": pode})
+                          "certificadora": l["certificadora"], "safra": l["safra"], "quantidade": pode,
+                          "exige_registro_externo": l["tipo_ativo"] == "VOLUNTARIO"})
             falta -= pode
 
         resultado = {"inventario_id": inventario_id, "finalidade": finalidade, "escopos": list(escopos),
@@ -150,12 +153,19 @@ def compensar(con: sqlite3.Connection, usuario_id: int, inventario_id: int, *,
         if falta > 0:
             raise ErroNegocio(f"Saldo elegível insuficiente: faltam {falta} unidades. "
                               "Use simular=true para ver o plano.")
+        refs = {int(k): v for k, v in (registros_externos or {}).items()}
+        faltando = [p["serial"] for p in plano if p["exige_registro_externo"]
+                    and not (refs.get(p["lote_id"]) or "").strip()]
+        if faltando:
+            raise ErroNegocio("Aposente primeiro na certificadora e informe o nº da aposentadoria dos "
+                              f"lotes: {', '.join(faltando)}.")
         beneficiario = f"{org['nome']} — inventário {inv['ano']}"
         for i, p in enumerate(plano):
             chave = f"{chave_idempotencia}:{i}" if chave_idempotencia else None
             r = cancelar(con, usuario_id, lote_id=p["lote_id"], quantidade=p["quantidade"],
                          finalidade=finalidade, beneficiario=beneficiario,
-                         inventario_id=inventario_id, chave_idempotencia=chave, _em_transacao=True)
+                         inventario_id=inventario_id, registro_externo_ref=refs.get(p["lote_id"]),
+                         chave_idempotencia=chave, _em_transacao=True)
             p["lote_cancelado_id"] = r["lote_id"]
             p["movimento_id"] = r["movimento_id"]
         return resultado

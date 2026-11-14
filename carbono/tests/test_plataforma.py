@@ -3,14 +3,39 @@ import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 
-from plataforma import compensacao, mrv, registro
+from datetime import date
+
+from plataforma import anexos, compensacao, fatores, mrv, registro
 from plataforma.api import criar_app
 from plataforma.banco import ErroNegocio, NaoAutorizado, conectar
 from plataforma.calculo import calcular_por_fator, calcular_por_gas
-from datetime import date
 
 from plataforma.enquadramento import (checar_projeto_publico, checar_reparticao_comunidade,
                                      enquadrar, faixa_sbce, fase_em)
+
+
+PDF = b"%PDF-1.4\n% teste\n%%EOF\n"
+
+
+@pytest.fixture(autouse=True)
+def _anexos_temporarios(tmp_path, monkeypatch):
+    monkeypatch.setenv("CARBONO_ANEXOS", str(tmp_path / "anexos"))
+
+
+def anexo(c, uid, nome="nf"):
+    return anexos.salvar(c, uid, f"{nome}.pdf", "application/pdf", PDF + nome.encode())["id"]
+
+
+def atv(c, uid, inv, sem_anexo=False, **kw):
+    """Lança atividade já com comprovante (regra: sem anexo não entra no total)."""
+    if not sem_anexo and "anexo_id" not in kw:
+        kw["anexo_id"] = anexo(c, uid)
+    return mrv.adicionar_atividade(c, uid, inv, **kw)
+
+
+@pytest.fixture
+def con(tmp_path):
+    return conectar(str(tmp_path / "f.db"))
 
 
 @pytest.fixture
@@ -35,7 +60,7 @@ def cen(tmp_path):
 def inventario_aprovado(s, ano=2025, diesel=10_000):
     c = s["c"]
     inv = mrv.criar_inventario(c, s["elab"], s["org"], ano)
-    mrv.adicionar_atividade(c, s["elab"], inv, descricao="diesel", fator="diesel_b", quantidade=diesel)
+    atv(c, s["elab"], inv, descricao="diesel", fator="diesel_b", quantidade=diesel)
     mrv.transitar(c, s["elab"], inv, "submeter")
     mrv.transitar(c, s["verif"], inv, "assumir")
     mrv.transitar(c, s["verif"], inv, "verificar")
@@ -50,24 +75,26 @@ def emitir(s, qtd=1000, safra=2024, tipo="CRVE", serial="BR-1", conta=None):
 
 
 # ---------------- Aferição ----------------
-def test_mistura_separa_parcela_biogenica():
-    r = calcular_por_fator("diesel_b", 1000, fracao_biogenica=0.14)
+def test_mistura_separa_parcela_biogenica(con):
+    r = calcular_por_fator(fatores.vigente(con, "diesel_b"), 1000, fracao_biogenica=0.14)
     assert r.tco2e == pytest.approx(1000 * 0.86 * 0.002681, rel=1e-6)
-    assert r.tco2_biogenico > 0 and "fonte" in r.memoria
+    assert r.tco2_biogenico > 0 and "diesel_b v1" in r.memoria
 
 
-def test_etanol_nao_soma_ao_escopo():
-    assert calcular_por_fator("etanol_hidratado", 1000).tco2e == 0
+def test_etanol_nao_soma_ao_escopo(con):
+    assert calcular_por_fator(fatores.vigente(con, "etanol_hidratado"), 1000).tco2e == 0
 
 
-def test_gas_usa_gwp_ar5():
-    assert calcular_por_gas("CH4", 1).tco2e == 28
+def test_gas_usa_gwp_do_conjunto(con):
+    assert calcular_por_gas("CH4", 1, fatores.gwp(con, "AR5", "CH4"), "AR5").tco2e == 28
+    assert calcular_por_gas("CH4", 1, fatores.gwp(con, "AR6", "CH4"), "AR6").tco2e == 27
 
 
-@pytest.mark.parametrize("entrada", [("diesel_b", -1), ("inexistente", 1)])
-def test_entradas_invalidas(entrada):
+def test_entradas_invalidas(con):
     with pytest.raises(ValueError):
-        calcular_por_fator(*entrada)
+        calcular_por_fator(fatores.vigente(con, "diesel_b"), -1)
+    with pytest.raises(ErroNegocio, match="desconhecido"):
+        fatores.vigente(con, "inexistente")
 
 
 # ---------------- Enquadramento ----------------
@@ -92,7 +119,7 @@ def test_concessao_tem_obrigacoes_contratuais():
 def test_elaborador_nao_verifica(cen):
     c = cen["c"]
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
+    atv(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
     mrv.transitar(c, cen["elab"], inv, "submeter")
     with pytest.raises(NaoAutorizado):
         mrv.transitar(c, cen["elab"], inv, "assumir")
@@ -103,7 +130,7 @@ def test_verificador_da_propria_organizacao_e_barrado(cen):
     interno = c.execute("INSERT INTO usuario (nome,papel,organizacao_id,acreditado) "
                         "VALUES ('I','verificador',?,1)", (cen["org"],)).lastrowid
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
+    atv(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
     mrv.transitar(c, cen["elab"], inv, "submeter")
     with pytest.raises(NaoAutorizado, match="pertencer"):
         mrv.transitar(c, interno, inv, "assumir")
@@ -112,15 +139,15 @@ def test_verificador_da_propria_organizacao_e_barrado(cen):
 def test_devolucao_exige_parecer_e_reabre_edicao(cen):
     c = cen["c"]
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
+    atv(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
     mrv.transitar(c, cen["elab"], inv, "submeter")
     mrv.transitar(c, cen["verif"], inv, "assumir")
     with pytest.raises(ErroNegocio):
-        mrv.adicionar_atividade(c, cen["elab"], inv, descricao="y", fator="glp", quantidade=1)
+        atv(c, cen["elab"], inv, descricao="y", fator="glp", quantidade=1)
     with pytest.raises(ErroNegocio, match="parecer"):
         mrv.transitar(c, cen["verif"], inv, "devolver")
     assert mrv.transitar(c, cen["verif"], inv, "devolver", "Sem nota fiscal") == "devolvido"
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="y", fator="glp", quantidade=1)
+    atv(c, cen["elab"], inv, descricao="y", fator="glp", quantidade=1)
 
 
 def test_falha_na_transicao_nao_deixa_rastro(cen):
@@ -221,7 +248,7 @@ def aprovar(s, inv):
 def test_conciliacao_limite_de_crve_e_periodo_da_cbe(cen):
     c = cen["c"]
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="caldeira", gas="CO2", quantidade=30_000)
+    atv(c, cen["elab"], inv, descricao="caldeira", gas="CO2", quantidade=30_000)
     aprovar(cen, inv)
     emitir(cen, qtd=10_000, tipo="CBE", safra=2025, serial="CBE-25", conta=cen["conta_org"])
     emitir(cen, qtd=10_000, tipo="CBE", safra=2024, serial="CBE-24", conta=cen["conta_org"])
@@ -253,11 +280,11 @@ def test_conciliacao_recusa_credito_voluntario(cen):
 def test_conciliacao_usa_emissoes_liquidas(cen):
     c = cen["c"]
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="caldeira", gas="CO2", quantidade=30_000)
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="reflorestamento", gas="CO2",
+    atv(c, cen["elab"], inv, descricao="caldeira", gas="CO2", quantidade=30_000)
+    atv(c, cen["elab"], inv, descricao="reflorestamento", gas="CO2",
                             quantidade=5, remocao=True)
     with pytest.raises(ErroNegocio, match="gas='CO2'"):
-        mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1, remocao=True)
+        atv(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1, remocao=True)
     for u, a in [("elab", "submeter"), ("verif", "assumir"), ("verif", "verificar"), ("mod", "aprovar")]:
         mrv.transitar(c, cen[u], inv, a)
     t = mrv.totais(c, inv)
@@ -271,7 +298,7 @@ def test_verificador_precisa_ser_acreditado(cen):
     nao = c.execute("INSERT INTO usuario (nome,papel,organizacao_id) VALUES ('N','verificador',?)",
                     (cen["ovv"],)).lastrowid
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
+    atv(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1)
     mrv.transitar(c, cen["elab"], inv, "submeter")
     with pytest.raises(NaoAutorizado, match="art. 32"):
         mrv.transitar(c, nao, inv, "assumir")
@@ -285,7 +312,7 @@ def operador_com_unidades(s, unidades):
     ids = {}
     for nome, t, kw in unidades:
         ids[nome] = mrv.criar_instalacao(c, s["elab"], s["org"], nome=nome, **kw)
-        mrv.adicionar_atividade(c, s["elab"], inv, descricao=nome, gas="CO2", quantidade=t,
+        atv(c, s["elab"], inv, descricao=nome, gas="CO2", quantidade=t,
                                 instalacao_id=ids[nome])
     aprovar(s, inv)
     return inv, ids
@@ -326,7 +353,7 @@ def test_atividade_sem_instalacao_gera_alerta(cen):
     c = cen["c"]
     inv, _ = operador_com_unidades(cen, [("Aterro", 30_000, {})])
     c.execute("UPDATE inventario SET status='rascunho' WHERE id=?", (inv,))
-    mrv.adicionar_atividade(c, cen["elab"], inv, descricao="solta", gas="CO2", quantidade=100)
+    atv(c, cen["elab"], inv, descricao="solta", gas="CO2", quantidade=100)
     from plataforma.enquadramento import enquadrar_operador
     r = enquadrar_operador("concessao", mrv.totais_por_instalacao(c, inv))
     assert any("sem instalação vinculada" in a for a in r["alertas"])
@@ -337,7 +364,7 @@ def test_instalacao_de_outra_organizacao_e_recusada(cen):
     alheia = mrv.criar_instalacao(c, cen["gger"], cen["ger"], nome="Base florestal")
     inv = mrv.criar_inventario(c, cen["elab"], cen["org"], 2025)
     with pytest.raises(ErroNegocio, match="outra organização"):
-        mrv.adicionar_atividade(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1,
+        atv(c, cen["elab"], inv, descricao="x", fator="glp", quantidade=1,
                                 instalacao_id=alheia)
     with pytest.raises(NaoAutorizado):
         mrv.criar_instalacao(c, cen["elab"], cen["ger"], nome="Invasão")
@@ -402,7 +429,7 @@ def test_api_fluxo_e_controle_de_acesso(tmp_path):
     reg = c.execute("INSERT INTO usuario (nome,papel) VALUES ('R','registrador')").lastrowid
     H = lambda u: {"X-Usuario-Id": str(u)}  # noqa: E731
 
-    assert cli.get("/saude").json() == {"status": "ok"}
+    assert cli.get("/saude").json()["status"] == "ok"
     assert cli.post("/organizacoes", json={}, headers=H(999)).status_code == 401
     o1 = cli.post("/organizacoes", headers=H(reg), json={"nome": "Pref", "cnpj": "11111111000191",
                                                          "tipo": "orgao_publico"}).json()
@@ -418,7 +445,19 @@ def test_api_fluxo_e_controle_de_acesso(tmp_path):
     r = cli.post(f"/inventarios/{inv}/atividades", headers=H(e1),
                  json={"descricao": "luz", "fator": "energia_sin", "quantidade": 1000})
     assert r.status_code == 201
+    det = cli.get(f"/inventarios/{inv}", headers=H(e1)).json()
+    assert det["totais"]["escopo2"] == 0 and det["totais"]["pendentes_comprovacao"]["quantidade"] == 1
+    # Upload do comprovante e vínculo: só então a atividade entra no total.
+    up = cli.post("/anexos", headers=H(e1), files={"arquivo": ("fatura.pdf", PDF, "application/pdf")})
+    assert up.status_code == 201
+    assert cli.post("/anexos", headers=H(e1), files={"arquivo": ("x.pdf", b"nao-e-pdf", "application/pdf")}
+                    ).status_code == 409
+    assert cli.patch(f"/atividades/{r.json()['id']}", headers=H(e1),
+                     json={"anexo_id": up.json()["id"]}).status_code == 200
     assert cli.get(f"/inventarios/{inv}", headers=H(e1)).json()["totais"]["escopo2"] == 38.5
+    assert cli.get(f"/anexos/{up.json()['id']}", headers=H(e2)).status_code == 403
+    trilha = cli.get("/auditoria", headers=H(reg), params={"entidade": "atividade"}).json()
+    assert trilha[0]["acao"] == "editar" and trilha[0]["ip"] == "testclient"
     inst = cli.post(f"/organizacoes/{o1['id']}/instalacoes", headers=H(e1), json={"nome": "Garagem"})
     assert inst.status_code == 201
     assert cli.get(f"/organizacoes/{o1['id']}/instalacoes", headers=H(e2)).status_code == 403
@@ -436,7 +475,7 @@ def test_api_fluxo_e_controle_de_acesso(tmp_path):
     assert enq["faixa_sbce"] == "nao_regulado" and any("preliminar" in a for a in enq["alertas"])
     assert cli.get("/registro/auditoria").json()["integra"] is True
     # Painel web servido pela própria aplicação; listagens respeitam o papel.
-    assert "Carbono Público" in cli.get("/painel/").text
+    assert "CarbonMG" in cli.get("/painel/").text
     assert cli.get("/", follow_redirects=False).headers["location"] == "/painel/"
     assert cli.get("/eu", headers=H(e1)).json()["organizacao"]["id"] == o1["id"]
     assert [i["id"] for i in cli.get("/inventarios", headers=H(e2)).json()] == []

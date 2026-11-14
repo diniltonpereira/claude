@@ -3,3 +3,6 @@
 *.db-shm
 __pycache__/
 .pytest_cache/
+anexos/
+.env
+.venv/

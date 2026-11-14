@@ -1,69 +1,85 @@
-# Carbono Público: gestão, aferição, moderação e compensação de carbono
+# CarbonMG: inventário, terceirizadas e compensação de carbono para o setor público
 
-Plataforma para **órgãos públicos, PPPs e concessões** inventariarem emissões, submeterem o inventário a verificação independente e compensarem com créditos rastreáveis. Foi construída sobre o marco legal brasileiro: Lei 15.042/2024 (SBCE), Lei 12.187/2009, Lei 14.133/2021, Lei 11.079/2004, Lei 8.987/1995 e Lei 11.284/2006. A análise jurídica está em [`docs/MARCO_LEGAL.md`](docs/MARCO_LEGAL.md).
+Plataforma para órgãos públicos, PPPs e concessões, com foco inicial em Minas Gerais. Ela permite:
 
-```
- Aferição            Moderação (MRV)                         Registro                Compensação
- atividades ──► rascunho ► submetido ► em_verificação ► verificado ► aprovado ──► cancelar CRVE/CBE
- (fatores GHG)      ▲  elaborador   organismo acreditado   controladoria    │      (livro-razão com hash)
-                    └────────── devolvido (parecer obrigatório) ◄────────────┘
-                                         │
-                             Enquadramento SBCE (10 mil / 25 mil tCO2e) + obrigações contratuais
-```
+- medir as emissões com comprovante anexado;
+- passar o inventário por verificação independente e aprovação;
+- acompanhar as emissões das terceirizadas, com score e selo;
+- compensar com créditos certificados por terceiros, com rastro público.
 
-## Módulos
+**Regra de ouro:** a plataforma **não certifica, não verifica e não emite créditos**. Ela organiza a mensuração, o relato e a verificação (MRV), guarda as provas e espelha créditos emitidos pelo Registro Central do SBCE (CBE e CRVE) ou por certificadoras (Verra, Gold Standard).
 
-| Arquivo | Função |
-| --- | --- |
-| `plataforma/fatores.py` | Fatores de emissão com fonte e ano, e GWP do AR5 |
-| `plataforma/calculo.py` | Aferição por fator ou por gás, com parcela biogênica separada e memória de cálculo |
-| `plataforma/mrv.py` | Instalações e fontes, lançamento de atividades e fluxo de verificação e moderação com segregação de funções |
-| `plataforma/enquadramento.py` | Faixa no SBCE por instalação (art. 30), fase de implantação (art. 50), obrigações por tipo e checagens de projeto público (arts. 43 e 49) e de repartição com comunidades (art. 47) |
-| `plataforma/registro.py` | Emissão, transferência e cancelamento (art. 2º, II; art. 45) de lotes, com livro-razão somente-inclusão encadeado por SHA-256 |
-| `plataforma/compensacao.py` | Compensação voluntária (art. 45) e conciliação periódica sobre emissões líquidas (art. 34), com limite de CRVE do PNA e validade da CBE por período |
-| `plataforma/api.py` | API REST (FastAPI). Documentação em `/docs` |
+Base legal e técnica:
+- Lei 15.042/2024 (SBCE);
+- Lei 14.133/2021;
+- Lei 12.187/2009;
+- Leis 11.079/2004 e 8.987/1995;
+- LGPD;
+- GHG Protocol e ABNT NBR ISO 14064-1.
 
-## Regras que o sistema garante
-
-- **Segregação de funções:** quem elabora não verifica nem modera. O verificador precisa ser organismo de inspeção acreditado (art. 32, parágrafo único) e externo à organização. Toda devolução exige parecer.
-- **Sem dupla contagem (art. 2º, IX):** uma unidade cancelada nunca volta a circular, e o saldo não fica negativo. As operações rodam em transação com trava de escrita.
-- **Auditoria:** o livro-razão não aceita UPDATE nem DELETE (triggers), e `GET /registro/auditoria` recalcula a cadeia de hashes.
-- **Compensação com lastro:** só se compensa inventário aprovado, sem passar do total, com safra entre o ano do inventário e 5 anos antes.
-- **Conciliação conforme a lei:** só CBE e CRVE (art. 10), sobre emissões líquidas (art. 2º, V). A CRVE respeita o limite do PNA (art. 21, IV), e a CBE vale no próprio período, salvo autorização (art. 11, § 2º).
-- **Idempotência:** operações reenviadas com a mesma `chave_idempotencia` não se repetem.
-- **Acesso:** cada usuário só lê e movimenta dados da própria organização (testado contra IDOR).
-
-## Painel web
-
-A própria aplicação serve um painel em `http://127.0.0.1:8000/painel/` (a raiz redireciona para ele). O menu muda conforme o papel do usuário:
-
-| Papel | O que faz no painel |
-| --- | --- |
-| Elaboração | Cadastra instalações e fontes, cria o inventário, lança atividades com evidência, submete, vê o enquadramento com os fundamentos legais e compensa (com confirmação antes de cancelar) |
-| Verificação (organismo acreditado) | Assume inventários da fila, conclui ou devolve com parecer |
-| Moderação | Aprova ou devolve inventários verificados |
-| Registro | Cadastra organizações e usuários e escritura lotes emitidos |
-| Público, sem login | Transparência: créditos cancelados e integridade do livro-razão |
-
-A trilha do inventário mostra cada etapa carimbada com quem agiu e quando. Para experimentar: `python -m plataforma demo --banco demo.db` e depois `python -m plataforma servir --banco demo.db`. Usuários da demonstração: 1 registro, 2 elaboração (prefeitura), 3 verificação, 4 moderação, 6 elaboração (concessionária).
+Análise jurídica em [`docs/MARCO_LEGAL.md`](docs/MARCO_LEGAL.md).
 
 ## Como rodar
 
+Requisitos: Python 3.12 ou 3.13. Não há etapa de build.
+
 ```bash
 cd carbono
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m pytest -q                      # 51 testes (inclui o painel)
-python -m plataforma demo                # ciclo completo com dados fictícios
-python -m plataforma iniciar             # cria o banco e o 1º registrador
-python -m plataforma servir --porta 8000 # painel em /painel/, API em /docs
+python -m pytest -q                          # 70 testes
+python -m plataforma demo --banco demo.db    # dados fictícios completos
+python -m plataforma servir --banco demo.db  # http://127.0.0.1:8000 (painel) e /docs (API)
 ```
 
-Na API, identifique o usuário pelo cabeçalho `X-Usuario-Id` (somente no MVP).
+Na demonstração, entre com estes números de usuário:
 
-## Antes de usar em produção
+| Nº | Papel | O que ver |
+| --- | --- | --- |
+| 1 | Administração | Cadastros, fatores versionados, escrituração de lotes, auditoria |
+| 2 | Gestão do órgão (prefeitura) | Painel, inventários, unidades, terceirizadas, compensação, relatórios |
+| 3 | Verificação (organismo acreditado) | Fila de verificação, devolução com parecer |
+| 4 | Moderação (controladoria) | Aprovação final |
+| 6 | Gestão da concessionária | Enquadramento no SBCE por instalação |
+| 7 | Fiscal de contrato | Terceirizadas, lançamento pela empresa, notificação formal, selo |
+| 8 | Auditoria (TCE/TCU) | Tudo em modo leitura e a trilha de auditoria |
+| 9 | Terceirizada | Lançamento mensal com nota fiscal, score, selo |
 
-1. Trocar o `X-Usuario-Id` por login gov.br (OIDC) ou certificado ICP-Brasil.
-2. Atualizar os fatores de emissão (MCTI e Programa Brasileiro GHG Protocol) e os limiares do SBCE quando sair a regulamentação definitiva.
-3. Migrar do SQLite para PostgreSQL se houver muitos entes simultâneos.
-4. Integrar com o Sistema de Registro Central do SBCE e com o processo eletrônico (SEI) para guardar as evidências.
-5. Acompanhar a regulamentação do órgão gestor e ajustar os parâmetros (lista em `docs/MARCO_LEGAL.md`, seção 4).
+A rotina diária (lembretes, alertas e recálculo do score) deve ser agendada no servidor:
+
+```bash
+python -m plataforma rotina-diaria --banco carbono.db     # cron: 1 vez por dia
+```
+
+### Configuração
+
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `CARBONO_DB` | `carbono.db` | Arquivo do banco |
+| `CARBONO_ANEXOS` | `anexos/` | Pasta dos comprovantes, gravados com o nome igual ao SHA-256 |
+| `CARBONO_URL_PUBLICA` | endereço da requisição | Endereço público usado nos QR Codes (obrigatório atrás de proxy) |
+| `PLATAFORMA_NOME` | `CarbonMG` | Nome exibido |
+
+## O que a plataforma faz
+
+| Módulo | Recursos |
+| --- | --- |
+| **Inventário de GEE** | Hierarquia órgão > unidade > prédio/instalação/frota; lançamento mensal ou anual; anexo obrigatório, sem o qual o lançamento fica pendente e fora do total; fatores versionados com AR5 ou AR6; emissões evitadas e remoções à parte; edição e exclusão auditadas |
+| **Verificação e aprovação** | Elaboração > verificação por organismo acreditado e independente > aprovação pela controladoria; devolução com parecer; trilha carimbada |
+| **Painel do gestor** | Totais por mês, escopo e unidade (somando a hierarquia), comparação com o ano anterior, meta de redução com progresso, alertas de variação de 30% e de lançamentos sem anexo |
+| **SBCE** | Enquadramento por instalação (art. 30), fase de implantação (art. 50), obrigações com fundamento legal, conciliação sobre emissões líquidas |
+| **Terceirizadas** | Convite por CNPJ e contrato; aceite; lançamento mensal com nota (pela empresa ou pelo fiscal, que fica marcado); situação mês a mês; inadimplência só com cláusula contratual; score 0 a 100; selo com QR Code e validade de 12 meses; notificação formal; lembretes e alertas automáticos; importação para o escopo 3 do órgão |
+| **Créditos** | Espelho de CBE, CRVE e créditos voluntários; voluntário exige certificadora e certificado; cancelamento exige o nº da aposentadoria na certificadora; livro-razão com hash encadeado; certificado público verificável por hash e QR |
+| **Relatórios e transparência** | Relatório do inventário em HTML para PDF e em Excel, com metodologia, fatores e versão, memória de cálculo, SHA-256 dos anexos e trilha; painel público por órgão; trilha de auditoria (quem, quando, IP, antes e depois) |
+
+## Documentação para o desenvolvedor
+
+- [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md): módulos, modelo de dados, papéis e permissões, regras que o banco garante, API e checklist de produção.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): o que veio da especificação CarbonMG, o que foi ajustado por razão jurídica e o que falta.
+- [`docs/MARCO_LEGAL.md`](docs/MARCO_LEGAL.md): fundamentos legais.
+
+## Avisos
+
+- Os dados da demonstração são **fictícios**. Os fatores de emissão iniciais são referências: atualize-os pela tela de fatores com os valores oficiais (MCTI e Programa Brasileiro GHG Protocol) antes de um inventário real.
+- Os valores de HFC e SF6 do conjunto AR6 estão marcados para conferência.
+- O acesso por número de usuário serve só ao piloto. Ver o checklist de produção.

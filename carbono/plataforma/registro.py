@@ -16,7 +16,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
-from .banco import ErroNegocio, NaoAutorizado, buscar, transacao
+from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, transacao
 
 GENESE = "0" * 64
 
@@ -74,12 +74,26 @@ def _exigir_titular(con, usuario_id, conta_id):
         raise NaoAutorizado("Usuário não pertence à organização titular da conta.")
 
 
+CERTIFICADORAS_VOLUNTARIAS = ("Verra", "Gold Standard")
+
+
 def emitir(con: sqlite3.Connection, usuario_id: int, *, conta_id: int, tipo_ativo: str, projeto: str,
            metodologia: str, safra: int, quantidade: int, serial: str,
+           certificadora: str | None = None, certificado_anexo_id: int | None = None,
            chave_idempotencia: str | None = None) -> dict:
-    """Escritura um lote já emitido no registro oficial (ou crédito voluntário verificado)."""
+    """Escritura um lote já emitido no registro oficial (CBE/CRVE) ou crédito voluntário certificado.
+
+    A plataforma NÃO emite nem certifica créditos: só espelha lotes emitidos por terceiros.
+    Crédito voluntário exige certificadora reconhecida e o certificado anexado.
+    """
     if quantidade <= 0:
         raise ErroNegocio("Quantidade deve ser positiva.")
+    if tipo_ativo == "VOLUNTARIO":
+        if certificadora not in CERTIFICADORAS_VOLUNTARIAS:
+            raise ErroNegocio(f"Crédito voluntário exige certificadora entre {CERTIFICADORAS_VOLUNTARIAS}.")
+        if certificado_anexo_id is None:
+            raise ErroNegocio("Anexe o certificado do lote emitido pela certificadora.")
+        buscar(con, "anexo", certificado_anexo_id)
     with transacao(con):
         if (m := _ja_processado(con, chave_idempotencia, usuario_id)):
             return {"lote_id": m["lote_id"], "movimento_id": m["id"], "repetido": True}
@@ -87,9 +101,11 @@ def emitir(con: sqlite3.Connection, usuario_id: int, *, conta_id: int, tipo_ativ
         buscar(con, "conta", conta_id)
         try:
             lote_id = con.execute(
-                """INSERT INTO lote (serial, tipo_ativo, projeto, metodologia, safra, quantidade,
-                   conta_id, status) VALUES (?,?,?,?,?,?,?,'ativo')""",
-                (serial, tipo_ativo, projeto, metodologia, safra, quantidade, conta_id)).lastrowid
+                """INSERT INTO lote (serial, tipo_ativo, projeto, metodologia, certificadora,
+                   certificado_anexo_id, safra, quantidade, conta_id, status)
+                   VALUES (?,?,?,?,?,?,?,?,?,'ativo')""",
+                (serial, tipo_ativo, projeto, metodologia, certificadora, certificado_anexo_id, safra,
+                 quantidade, conta_id)).lastrowid
         except sqlite3.IntegrityError as exc:
             raise ErroNegocio(f"Serial duplicado ou dados inválidos: {exc}") from exc
         mid = _registrar(con, tipo="emissao", lote_id=lote_id, quantidade=quantidade, de_conta=None,
@@ -110,10 +126,11 @@ def _separar(con, lote, quantidade: int) -> int:
     filhos = con.execute("SELECT COUNT(*) FROM lote WHERE lote_origem_id=?", (lote["id"],)).fetchone()[0]
     con.execute("UPDATE lote SET quantidade = quantidade - ? WHERE id=?", (quantidade, lote["id"]))
     return con.execute(
-        """INSERT INTO lote (serial, tipo_ativo, projeto, metodologia, safra, quantidade, conta_id,
-           status, lote_origem_id) VALUES (?,?,?,?,?,?,?,'ativo',?)""",
+        """INSERT INTO lote (serial, tipo_ativo, projeto, metodologia, certificadora, certificado_anexo_id,
+           safra, quantidade, conta_id, status, lote_origem_id) VALUES (?,?,?,?,?,?,?,?,?,'ativo',?)""",
         (f"{lote['serial']}.{filhos + 1}", lote["tipo_ativo"], lote["projeto"], lote["metodologia"],
-         lote["safra"], quantidade, lote["conta_id"], lote["id"])).lastrowid
+         lote["certificadora"], lote["certificado_anexo_id"], lote["safra"], quantidade, lote["conta_id"],
+         lote["id"])).lastrowid
 
 
 def transferir(con: sqlite3.Connection, usuario_id: int, *, lote_id: int, quantidade: int,
@@ -136,8 +153,13 @@ def transferir(con: sqlite3.Connection, usuario_id: int, *, lote_id: int, quanti
 
 def cancelar(con: sqlite3.Connection, usuario_id: int, *, lote_id: int, quantidade: int,
              finalidade: str, beneficiario: str, inventario_id: int | None = None,
+             registro_externo_ref: str | None = None,
              chave_idempotencia: str | None = None, _em_transacao: bool = False) -> dict:
     """Cancela unidades (art. 2º, II; art. 45), retirando-as de circulação. Irreversível.
+
+    Crédito voluntário (Verra, Gold Standard) só é aposentado de fato no registro da
+    certificadora: `registro_externo_ref` (nº da aposentadoria lá) é obrigatório, senão o mesmo
+    crédito poderia ser usado de novo fora da plataforma (dupla contagem, art. 2º, IX).
 
     Finalidades: compensação voluntária (art. 45), conciliação periódica (art. 34) ou
     invalidação (ex.: reversão de remoções, art. 2º, XXXII, ou erro de escrituração).
@@ -152,9 +174,13 @@ def cancelar(con: sqlite3.Connection, usuario_id: int, *, lote_id: int, quantida
             return {"lote_id": m["lote_id"], "movimento_id": m["id"], "repetido": True}
         lote = buscar(con, "lote", lote_id)
         _exigir_titular(con, usuario_id, lote["conta_id"])
+        if lote["tipo_ativo"] == "VOLUNTARIO" and not (registro_externo_ref or "").strip():
+            raise ErroNegocio(f"Lote {lote['serial']}: informe o nº da aposentadoria no registro da "
+                              f"{lote['certificadora']} (registro_externo_ref).")
         movido = _separar(con, lote, quantidade)
         con.execute("""UPDATE lote SET status='cancelado', finalidade=?, beneficiario=?,
-                       inventario_id=? WHERE id=?""", (finalidade, beneficiario, inventario_id, movido))
+                       inventario_id=?, registro_externo_ref=? WHERE id=?""",
+                    (finalidade, beneficiario, inventario_id, registro_externo_ref, movido))
         mid = _registrar(con, tipo="cancelamento", lote_id=movido, quantidade=quantidade,
                          de_conta=lote["conta_id"], para_conta=None, usuario_id=usuario_id,
                          motivo=f"{finalidade}: {beneficiario}", chave=chave_idempotencia)
@@ -186,3 +212,18 @@ def verificar_cadeia(con: sqlite3.Connection) -> dict:
         anterior = m["hash"]
         n += 1
     return {"integra": True, "movimentos": n, "quebra_em": None}
+
+
+def certificado_por_hash(con: sqlite3.Connection, hash_: str) -> dict:
+    """Certificado público de cancelamento, localizado pelo hash do movimento no livro-razão."""
+    m = con.execute(
+        """SELECT m.hash, m.em, m.quantidade, l.serial, l.tipo_ativo, l.projeto, l.metodologia,
+                  l.certificadora, l.safra, l.finalidade, l.beneficiario, l.registro_externo_ref,
+                  o.nome AS titular
+           FROM movimento m JOIN lote l ON l.id = m.lote_id
+           LEFT JOIN conta c ON c.id = m.de_conta LEFT JOIN organizacao o ON o.id = c.organizacao_id
+           WHERE m.hash = ? AND m.tipo = 'cancelamento'""", (hash_,)).fetchone()
+    if m is None:
+        raise NaoEncontrado("Nenhum cancelamento com esse hash.")
+    cadeia = verificar_cadeia(con)
+    return {**dict(m), "livro_razao_integro": cadeia["integra"]}
