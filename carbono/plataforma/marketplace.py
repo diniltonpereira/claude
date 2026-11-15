@@ -293,6 +293,8 @@ def liquidar(con: sqlite3.Connection, usuario_id: int, pedido_id: int, *, nota_f
         (f"pedido-{pedido_id}-entrega",)).fetchone()
     if not entrega or entrega["para_conta"] != conta["id"] or entrega["quantidade"] != p["quantidade"]:
         raise ErroNegocio("A entrega não confere com o registro: liquidação bloqueada.")
+    from .creditos import exigir_conferencia
+    exigir_conferencia(con, pedido_id)
     con.execute("UPDATE pedido SET status='liquidado', nota_fiscal=?, liquidado_por=? WHERE id=?",
                 (nota_fiscal.strip(), usuario_id, pedido_id))
     registrar(con, usuario_id, "liquidar", "pedido", pedido_id, depois={"nota_fiscal": nota_fiscal})
@@ -355,6 +357,9 @@ def ver_pedido(con: sqlite3.Connection, usuario_id: int, pedido_id: int) -> dict
     d = dict(r)
     d["pncp"] = json.loads(d.pop("pncp_dados")) if d.get("pncp_dados") else None
     d["alerta_pncp"] = alerta_pedido(d)
+    from .creditos import bloco_do_lote, ultima_conferencia
+    d["registro_lote"] = bloco_do_lote(con, d["lote_entregue_id"] or buscar(con, "oferta", d["oferta_id"])["lote_id"])
+    d["conferencia"] = ultima_conferencia(con, pedido_id)
     return d
 
 

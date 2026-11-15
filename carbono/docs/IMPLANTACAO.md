@@ -284,3 +284,33 @@ A plataforma usa só as **APIs públicas de consulta** do PNCP, sem credencial. 
   
   O valor homologado tem prioridade; item com orçamento sigiloso não pode ser usado. Fontes com mais de 12 meses ou descartadas saem da estimativa.
 - **No ETP e no TR:** as fontes vigentes aparecem numa tabela, com órgão, nº de controle e item, tipo de valor, R$/tCO2e e data. O ETP mostra também a mediana de todas as fontes (catálogo e PNCP). O preço de referência final continua sendo decisão motivada da área demandante.
+
+## 15. Créditos conferidos e verificação independente
+
+A plataforma **não certifica nem verifica**: ela prepara e confere. Os motivos (conflito de interesse e independência exigida pela Lei 15.042/2024 e pela ISO 14065) e a análise de viabilidade estão registrados no histórico do projeto.
+
+- **Escrituração de crédito voluntário:**
+  - exige o link `https` do lote no registro da certificadora (Verra ou Gold Standard, conferindo o domínio) e o bloco de números de série copiado do registro;
+  - nos formatos conhecidos de série, a plataforma lê o projeto, a safra e o intervalo e confere a quantidade e a safra do lote;
+  - recusa bloco já escriturado e intervalo que se sobreponha a outro lote do mesmo projeto, para que o mesmo crédito não entre duas vezes;
+  - série em formato não reconhecido é aceita, mas também não pode se repetir.
+- **Conferência pelo fiscal antes da liquidação:** os registros não têm consulta automática aberta (a Verra exige conta aprovada para a API; a Gold Standard bloqueia clientes automáticos). Por isso:
+  - o fiscal abre o registro pelo link do pedido e confere série, quantidade e titularidade;
+  - registra o resultado (conforme ou divergente, com observação) e anexa a evidência (PDF ou imagem da página);
+  - sem conferência "conforme", a liquidação de crédito voluntário fica bloqueada. As conferências não podem ser alteradas nem apagadas.
+  
+  Quando houver volume, a automação pode vir por conta oficial na API da Verra.
+- **Pacote para o verificador:** na página do inventário submetido, "Pacote para o verificador (ZIP)". O pacote traz:
+  - `inventario.json`, com totais, atividades, fatores, histórico e enquadramento;
+  - o relatório em HTML e em Excel;
+  - os comprovantes, com o SHA-256 no nome;
+  - `trilha.csv`;
+  - `SHA256SUMS.txt`, conferível com `sha256sum -c SHA256SUMS.txt`.
+  
+  Podem baixar: a organização, o verificador que assumiu (ou um verificador habilitado, enquanto o inventário está submetido) e os papéis de controle. Cada exportação fica na trilha.
+- **Credenciamento de verificadores:**
+  - o verificador envia, em "Minha conta", o acreditador (ex.: Inmetro/Cgcre), o nº, as normas, a validade e o certificado;
+  - a administração confere na fonte e aprova ou indefere com parecer, em Cadastros;
+  - a organização que tem credenciamento registrado depende dele: acreditação vencida ou não aprovada impede assumir inventários;
+  - organizações sem nenhum registro continuam com a marcação manual de "acreditado".
+- **Regras do SBCE:** o decreto do Programa Brasileiro de MRV (acreditação dos verificadores) e o de credenciamento de metodologias para CRVE estavam em consulta pública prevista para novembro de 2026. Revise esta seção quando forem publicados.

@@ -80,11 +80,13 @@ CERTIFICADORAS_VOLUNTARIAS = ("Verra", "Gold Standard")
 def emitir(con: sqlite3.Connection, usuario_id: int, *, conta_id: int, tipo_ativo: str, projeto: str,
            metodologia: str, safra: int, quantidade: int, serial: str,
            certificadora: str | None = None, certificado_anexo_id: int | None = None,
+           registro_url: str | None = None, serie_bloco: str | None = None,
            chave_idempotencia: str | None = None) -> dict:
     """Escritura um lote já emitido no registro oficial (CBE/CRVE) ou crédito voluntário certificado.
 
     A plataforma NÃO emite nem certifica créditos: só espelha lotes emitidos por terceiros.
-    Crédito voluntário exige certificadora reconhecida e o certificado anexado.
+    Crédito voluntário exige certificadora reconhecida, o certificado anexado, o link do lote no registro
+    e o bloco de séries, conferido contra lotes já escriturados (creditos.validar_bloco).
     """
     if quantidade <= 0:
         raise ErroNegocio("Quantidade deve ser positiva.")
@@ -99,6 +101,11 @@ def emitir(con: sqlite3.Connection, usuario_id: int, *, conta_id: int, tipo_ativ
             return {"lote_id": m["lote_id"], "movimento_id": m["id"], "repetido": True}
         _exigir_registrador(con, usuario_id)
         buscar(con, "conta", conta_id)
+        bloco = None
+        if tipo_ativo == "VOLUNTARIO":
+            from .creditos import validar_bloco
+            bloco = validar_bloco(con, certificadora=certificadora, registro_url=registro_url or "",
+                                  serie_bloco=serie_bloco or "", quantidade=quantidade, safra=safra)
         try:
             lote_id = con.execute(
                 """INSERT INTO lote (serial, tipo_ativo, projeto, metodologia, certificadora,
@@ -108,6 +115,9 @@ def emitir(con: sqlite3.Connection, usuario_id: int, *, conta_id: int, tipo_ativ
                  quantidade, conta_id)).lastrowid
         except sqlite3.IntegrityError as exc:
             raise ErroNegocio(f"Serial duplicado ou dados inválidos: {exc}") from exc
+        if bloco:
+            from .creditos import gravar_bloco
+            gravar_bloco(con, lote_id, certificadora, bloco)
         mid = _registrar(con, tipo="emissao", lote_id=lote_id, quantidade=quantidade, de_conta=None,
                          para_conta=conta_id, usuario_id=usuario_id, motivo=f"Emissão {serial}",
                          chave=chave_idempotencia)

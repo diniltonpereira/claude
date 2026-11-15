@@ -2,7 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from plataforma import anexos, projetos as pj, registro
+from plataforma import anexos, creditos, projetos as pj, registro
 from plataforma.api import criar_app
 from plataforma.banco import ErroNegocio, NaoAutorizado, conectar
 
@@ -112,7 +112,8 @@ def test_funil_exige_checklist_com_evidencia_e_anuencia(s):
         pj.avancar(c, s["gestor"], pid)
     registro.emitir(c, s["reg"], conta_id=registro.abrir_conta(c, s["pref"]), tipo_ativo="VOLUNTARIO", projeto="Biogás",
                     metodologia="ACM0001", certificadora="Verra", certificado_anexo_id=pdf(c, s["reg"]), safra=2027,
-                    quantidade=5000, serial="VCS-9999-2027-1")
+                    quantidade=5000, serial="VCS-9999-2027-1",
+                    **dict(zip(("registro_url", "serie_bloco"), creditos.serie_verra(1, 5000, 2027, 9999))))
     assert pj.avancar(c, s["gestor"], pid) == "venda"
 
 

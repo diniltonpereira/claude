@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from datetime import date
 
-from . import anexos, compensacao, marketplace, mrv, painel, projetos, registro, terceirizadas
+from . import anexos, compensacao, creditos, marketplace, mrv, painel, projetos, registro, terceirizadas
 from .banco import conectar
 from .enquadramento import checar_projeto_publico, enquadrar_operador, fase_em
 
@@ -124,7 +124,8 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
                            quantidade=5_000, serial=f"BR-CRVE-{ano_ant}-000001")["lote_id"]
     registro.emitir(c, reg, conta_id=conta[pref], tipo_ativo="VOLUNTARIO", projeto="Biogás Aterro Regional (fictício)",
                     metodologia="ACM0001", certificadora="Verra", certificado_anexo_id=_pdf(c, reg, "Certificado VCU"),
-                    safra=ano, quantidade=300, serial=f"VCS-0000-{ano}-000300")
+                    safra=ano, quantidade=300, serial=f"VCS-0000-{ano}-000300",
+                    **dict(zip(("registro_url", "serie_bloco"), creditos.serie_verra(100_001, 300, ano, 9001))))
     registro.transferir(c, gest_flor, lote_id=crve, quantidade=1_000, para_conta=conta[pref],
                         chave_idempotencia="contrato-12-parcela-1")
     simulacao = compensacao.compensar(c, elab, inv, simular=True)
@@ -147,13 +148,17 @@ def executar(banco: str = "demo.db", hoje: date | None = None) -> dict:
             (f"VCS-2222-{ano}-003000", "REDD+ Amazônia (fictício)", "redd", "Paragominas", "PA", 29.0, 3_000)]:
         lote = registro.emitir(c, reg, conta_id=conta_v, tipo_ativo="VOLUNTARIO", projeto=proj, metodologia="VM0000",
                                certificadora="Verra", certificado_anexo_id=_pdf(c, reg, f"Certificado {serial}"),
-                               safra=ano, quantidade=qtd, serial=serial)["lote_id"]
+                               safra=ano, quantidade=qtd, serial=serial,
+                               **dict(zip(("registro_url", "serie_bloco"),
+                                          creditos.serie_verra(500_001, qtd, ano, 9100 + len(ofertas)))))["lote_id"]
         ofertas.append(marketplace.publicar_oferta(c, vend, lote_id=lote, categoria=cat, municipio=mun, uf=uf,
                                                    preco_unitario=preco, quantidade=qtd, hoje=hoje))
     ped_pago = marketplace.criar_pedido(c, elab, oferta_id=ofertas[0], quantidade=40, inventario_id=inv, hoje=hoje)
     marketplace.instruir(c, elab, ped_pago, processo=f"SEI 0000.01.0000123/{hoje.year}-00")
     marketplace.registrar_empenho(c, elab, ped_pago, numero=f"{hoje.year}NE000101", data=hoje.isoformat(), valor=1_672.0)
     marketplace.entregar(c, vend, ped_pago)
+    creditos.conferir(c, fiscal, ped_pago, resultado="conforme", evidencia_anexo_id=_pdf(c, fiscal, "Consulta ao registro"),
+                      observacao="Série, quantidade e titularidade conferidas no registro (exemplo fictício).")
     marketplace.liquidar(c, fiscal, ped_pago, nota_fiscal="NFS-e 000457", conferido=True)
     marketplace.registrar_pagamento(c, elab, ped_pago, referencia=f"{hoje.year}OB000777", data=hoje.isoformat())
     ped_aberto = marketplace.criar_pedido(c, elab, oferta_id=ofertas[0], quantidade=60, inventario_id=inv, hoje=hoje)

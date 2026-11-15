@@ -8,7 +8,7 @@
  * - Ao sair da conta, o app apaga o cache de consultas (LIMPAR_DADOS).
  */
 "use strict";
-const VERSAO = "lastro-v14";
+const VERSAO = "lastro-v15";
 const CACHE_APP = `${VERSAO}-app`;
 const CACHE_API = "lastro-api";
 const APP = ["./", "index.html", "app.css", "app.js", "offline.js", "mapa.js", "manifest.webmanifest",

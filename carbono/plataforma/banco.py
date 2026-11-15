@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
-VERSAO_ESQUEMA = 12
+VERSAO_ESQUEMA = 13
 VERSAO_MINIMA_MIGRAVEL = 2
 
 ESQUEMA = """
@@ -472,6 +472,59 @@ CREATE TABLE IF NOT EXISTS anexo_alerta (
     detectado_em    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- ---------------------------------------------------------------- conferência de créditos (versão 13)
+-- Bloco de séries do lote voluntário no registro da certificadora. Um bloco só pode ser escriturado
+-- uma vez; intervalos de série sobrepostos do mesmo projeto também são recusados (crédito vendido duas vezes).
+CREATE TABLE IF NOT EXISTS lote_registro (
+    lote_id         INTEGER PRIMARY KEY REFERENCES lote(id),
+    certificadora   TEXT NOT NULL,
+    registro_url    TEXT NOT NULL CHECK (registro_url LIKE 'https://%'),
+    serie_bloco     TEXT NOT NULL,
+    projeto_ref     TEXT,                   -- id do projeto no registro, quando a série permite ler
+    serie_inicio    INTEGER,
+    serie_fim       INTEGER,
+    CHECK ((serie_inicio IS NULL) = (serie_fim IS NULL)),
+    CHECK (serie_fim IS NULL OR serie_fim >= serie_inicio),
+    UNIQUE (certificadora, serie_bloco)
+);
+CREATE INDEX IF NOT EXISTS lote_registro_intervalo ON lote_registro (certificadora, projeto_ref, serie_inicio);
+
+-- Conferência do lote no registro público, feita pelo fiscal antes de atestar a liquidação.
+CREATE TABLE IF NOT EXISTS conferencia_registro (
+    id              INTEGER PRIMARY KEY,
+    pedido_id       INTEGER NOT NULL REFERENCES pedido(id),
+    lote_id         INTEGER NOT NULL REFERENCES lote(id),   -- lote de origem (o escriturado)
+    usuario_id      INTEGER NOT NULL REFERENCES usuario(id),
+    resultado       TEXT NOT NULL CHECK (resultado IN ('conforme','divergente')),
+    observacao      TEXT,
+    evidencia_anexo_id INTEGER NOT NULL REFERENCES anexo(id),
+    conferido_em    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE TRIGGER IF NOT EXISTS conferencia_sem_update BEFORE UPDATE ON conferencia_registro
+BEGIN SELECT RAISE(ABORT, 'conferência registrada é imutável'); END;
+CREATE TRIGGER IF NOT EXISTS conferencia_sem_delete BEFORE DELETE ON conferencia_registro
+BEGIN SELECT RAISE(ABORT, 'conferência registrada é imutável'); END;
+
+-- Credenciamento aberto de verificadores: acreditação comprovada (Inmetro/Cgcre ou outro acreditador),
+-- conferida pela administração, com validade.
+CREATE TABLE IF NOT EXISTS acreditacao_verificador (
+    id              INTEGER PRIMARY KEY,
+    organizacao_id  INTEGER NOT NULL REFERENCES organizacao(id),
+    acreditador     TEXT NOT NULL,          -- ex.: Inmetro/Cgcre
+    numero          TEXT NOT NULL,          -- nº da acreditação
+    normas          TEXT NOT NULL,          -- ex.: ABNT NBR ISO 14065 e ISO 14064-3
+    escopo          TEXT,
+    valido_ate      TEXT NOT NULL,
+    documento_anexo_id INTEGER NOT NULL REFERENCES anexo(id),
+    status          TEXT NOT NULL DEFAULT 'em_analise' CHECK (status IN ('em_analise','aprovada','indeferida')),
+    parecer         TEXT,
+    solicitado_por  INTEGER NOT NULL REFERENCES usuario(id),
+    solicitado_em   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    analisado_por   INTEGER REFERENCES usuario(id),
+    analisado_em    TEXT,
+    CHECK (status = 'em_analise' OR (analisado_por IS NOT NULL AND parecer IS NOT NULL))
+);
+
 -- ---------------------------------------------------------------- pesquisa de preços (versão 12)
 -- Fontes do art. 23, § 1º, da Lei 14.133/2021 colhidas pela plataforma; hoje: contratações similares
 -- divulgadas no PNCP (inciso II). Cada fonte guarda a referência verificável e a data da coleta.
@@ -687,7 +740,7 @@ def _migrar_11_para_12(con: sqlite3.Connection) -> None:
 
 # Migrações: versão de origem -> função. As versões 2→3 e 3→4 só criaram tabelas novas, que o
 # próprio ESQUEMA (CREATE ... IF NOT EXISTS) acrescenta. Alterações de tabelas existentes entram aqui.
-MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9, 9: None, 10: _migrar_10_para_11, 11: _migrar_11_para_12}
+MIGRACOES = {2: None, 3: None, 4: _migrar_4_para_5, 5: _migrar_5_para_6, 6: _migrar_6_para_7, 7: None, 8: _migrar_8_para_9, 9: None, 10: _migrar_10_para_11, 11: _migrar_11_para_12, 12: None}
 
 
 def migrar(con: sqlite3.Connection, caminho: str = "") -> int:

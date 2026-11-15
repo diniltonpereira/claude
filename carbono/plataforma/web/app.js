@@ -357,11 +357,13 @@ async function telaConta() {
     ${producao() && u.email ? `<section class="bloco"><h2>Avisos por e-mail</h2>
       <label class="opcao"><input type="checkbox" id="c-avisos" ${u.avisos_email ? "checked" : ""}> Receber lembretes de prazo e alertas em ${esc(u.email)}</label>
       <p class="memoria">Convites, notificações formais do fiscal e avisos de segurança da conta são sempre enviados: fazem parte do processo ou protegem o seu acesso.</p></section>` : ""}
+    ${u.papel === "verificador" ? `<section class="bloco" id="s-acred"><h2>Credenciamento do organismo verificador</h2><p class="vazio">Carregando…</p></section>` : ""}
     <section class="bloco"><h2>Seus dados (LGPD)</h2>
       <p>Baixe os dados pessoais que a plataforma guarda sobre você. Para correção ou anonimização, fale com a administração.</p>
       <div class="acoes"><button type="button" class="botao secundario" id="b-dados">Baixar meus dados</button>
         <a class="botao secundario" href="#/privacidade">Política de privacidade</a></div></section>`;
   $("#b-dados").onclick = () => baixar("/eu/dados", "meus-dados.json").catch((e) => avisar(e.message, true));
+  if (u.papel === "verificador") secaoAcreditacao();
   const cav = $("#c-avisos");
   if (cav) cav.onchange = async () => {
     try { await api("PATCH", "/eu/preferencias", { avisos_email: cav.checked }); await carregarSessao();
@@ -380,6 +382,37 @@ async function telaConta() {
       aoEnviar($("#f-totp"), async (d) => { await api("POST", "/auth/2fa/confirmar", d); await carregarSessao(); avisar("Verificação em duas etapas ativada."); telaConta(); });
     } catch (e) { avisar(e.message, true); }
   };
+}
+
+const ROTULO_ACRED = { em_analise: ["Em análise", "submetido"], aprovada: ["Aprovada", "aprovado"], indeferida: ["Indeferida", "devolvido"] };
+function linhaAcred(a, analisar) {
+  const [rot, cls] = ROTULO_ACRED[a.status];
+  const vencida = a.status === "aprovada" && a.valido_ate < new Date().toISOString().slice(0, 10);
+  return `<tr><td>${esc(a.organismo)}<div class="memoria">${esc(a.acreditador)} nº ${esc(a.numero)} · ${esc(a.normas)}</div></td>
+    <td>${dataCurta(a.valido_ate)}</td><td><span class="situacao ${vencida ? "devolvido" : cls}">${vencida ? "Vencida" : rot}</span>${a.parecer ? `<div class="memoria">${esc(a.parecer)}</div>` : ""}</td>
+    <td><button type="button" class="link" data-baixar="${a.documento_anexo_id}" data-nome="acreditacao.pdf">documento</button>
+    ${analisar && a.status === "em_analise" ? `<form class="f-anal grade" data-id="${a.id}" style="margin-top:.5rem"><label class="largo">Parecer, com a fonte consultada<input name="parecer" required minlength="5"></label>
+      <div class="acoes largo"><button type="submit" class="botao secundario" value="sim">Aprovar</button><button type="submit" class="botao perigo" value="nao">Indeferir</button></div></form>` : ""}</td></tr>`;
+}
+
+async function secaoAcreditacao() {
+  const s = $("#s-acred");
+  const lista = await api("GET", "/acreditacoes");
+  s.innerHTML = `<h2>Credenciamento do organismo verificador</h2>
+    <p class="memoria">Para assumir inventários, o organismo comprova a acreditação (por exemplo, Inmetro/Cgcre, ABNT NBR ISO 14065) e a validade. A administração confere na fonte antes de aprovar.</p>
+    ${lista.length ? `<div class="rolagem"><table><thead><tr><th>Organismo</th><th>Validade</th><th>Situação</th><th></th></tr></thead><tbody>${lista.map((a) => linhaAcred(a, false)).join("")}</tbody></table></div>` : ""}
+    <form id="f-acred" class="grade" style="margin-top:1rem">
+      <label>Acreditador<input name="acreditador" required value="Inmetro/Cgcre"></label>
+      <label>Nº da acreditação<input name="numero" required></label>
+      <label class="largo">Normas<input name="normas" required value="ABNT NBR ISO 14065 e ABNT NBR ISO 14064-3"></label>
+      <label>Válida até<input name="valido_ate" type="date" required></label>
+      <label>Certificado de acreditação (PDF)<input type="file" name="arquivo" accept=".pdf" required></label>
+      <div class="acoes largo"><button type="submit" class="botao secundario">Enviar para análise</button></div><p class="erro-campo largo"></p></form>`;
+  s.querySelectorAll("[data-baixar]").forEach((b) => (b.onclick = () => baixar(`/anexos/${b.dataset.baixar}`, b.dataset.nome).catch((e) => avisar(e.message, true))));
+  aoEnviar($("#f-acred"), async (d, form) => {
+    const doc = await anexoDoCampo(form);
+    await api("POST", "/acreditacoes", { ...d, documento_anexo_id: doc }); avisar("Credenciamento enviado para análise."); secaoAcreditacao();
+  });
 }
 
 // ---------------------------------------------------------------- fila offline
@@ -600,6 +633,7 @@ async function telaInventario(id) {
         <button class="botao secundario" id="b-rel">Relatório para impressão (PDF)</button>
         <button class="botao secundario" id="b-xlsx">Planilha (Excel)</button>
         <button class="botao secundario" id="b-docx">Relatório editável (Word)</button>
+        ${inv.status !== "rascunho" ? `<button class="botao secundario" id="b-pacote">Pacote para o verificador (ZIP)</button>` : ""}
         ${inv.status === "aprovado" ? `<button class="botao secundario" id="b-etp">ETP da compensação (Word)</button>` : ""}
         ${editavel ? `<button class="botao secundario" id="b-import">Importar emissões das terceirizadas</button>` : ""}
       </div></section>
@@ -657,6 +691,8 @@ function ligarAcoesInventario(inv) {
   }
   $("#b-rel").onclick = () => abrirRelatorio(`/inventarios/${id}/relatorio.html`).catch((e) => avisar(e.message, true));
   $("#b-xlsx").onclick = () => baixar(`/inventarios/${id}/relatorio.xlsx`, `inventario-${inv.ano}.xlsx`).catch((e) => avisar(e.message, true));
+  const bp = $("#b-pacote");
+  if (bp) bp.onclick = () => baixar(`/inventarios/${id}/pacote-verificacao.zip`, `verificacao-${inv.ano}.zip`).catch((e) => avisar(e.message, true));
   $("#b-docx").onclick = () => baixar(`/inventarios/${id}/relatorio.docx`, `relatorio-emissoes-${inv.ano}.docx`).catch((e) => avisar(e.message, true));
   const be = $("#b-etp");
   if (be) be.onclick = () => baixar(`/inventarios/${id}/etp-compensacao.docx`, `etp-compensacao-${inv.ano}.docx`).catch((e) => avisar(e.message, true));
@@ -1060,6 +1096,8 @@ async function telaRegistro() {
       <label>Tipo<select name="tipo_ativo"><option value="CRVE">CRVE</option><option value="CBE">CBE</option><option value="VOLUNTARIO">Crédito voluntário</option></select></label>
       <label data-vol hidden>Certificadora<select name="certificadora"><option>Verra</option><option>Gold Standard</option></select></label>
       <label data-vol hidden>Certificado do lote (PDF)<input type="file" name="arquivo" accept=".pdf"></label>
+      <label data-vol hidden class="largo">Link do lote no registro da certificadora<input name="registro_url" type="url" placeholder="https://registry.verra.org/…"></label>
+      <label data-vol hidden class="largo">Bloco de números de série <span class="ajuda">Copie exatamente como aparece no registro. A plataforma confere quantidade, safra e se a série já foi escriturada.</span><input name="serie_bloco" class="mono"></label>
       <label>Serial<input name="serial" required></label>
       <label>Projeto<input name="projeto" required></label>
       <label>Metodologia<input name="metodologia" required></label>
@@ -1079,7 +1117,8 @@ async function telaRegistro() {
       const vol = d.tipo_ativo === "VOLUNTARIO";
       const anexo = vol ? await anexoDoCampo(form) : null;
       await api("POST", "/registro/emissoes", { ...d, conta_id: Number(d.conta_id), certificadora: vol ? d.certificadora : null,
-        certificado_anexo_id: anexo, chave_idempotencia: `painel-e-${d.serial}` });
+        certificado_anexo_id: anexo, registro_url: vol ? d.registro_url : null, serie_bloco: vol ? d.serie_bloco : null,
+        chave_idempotencia: `painel-e-${d.serial}` });
       avisar("Lote escriturado."); telaRegistro();
     });
   }
@@ -1087,8 +1126,8 @@ async function telaRegistro() {
 
 // ---------------------------------------------------------------- cadastros e fatores
 async function telaCadastros() {
-  const [orgs, users, fat, cx] = await Promise.all([api("GET", "/organizacoes"), api("GET", "/usuarios"), api("GET", "/fatores?historico=true"),
-    producao() ? api("GET", "/emails") : null]);
+  const [orgs, users, fat, cx, acreds] = await Promise.all([api("GET", "/organizacoes"), api("GET", "/usuarios"), api("GET", "/fatores?historico=true"),
+    producao() ? api("GET", "/emails") : null, api("GET", "/acreditacoes")]);
   conteudo.innerHTML = `<h1>Cadastros e fatores</h1>
     <p class="introducao">Organizações abrem conta no registro automaticamente. O número do usuário é o que ele usa para entrar no piloto.</p>
     <div class="colunas"><section class="bloco"><h2>Organizações</h2><div class="rolagem"><table><thead><tr><th>Nome</th><th>Tipo</th><th>CNPJ</th></tr></thead><tbody>
@@ -1114,6 +1153,9 @@ async function telaCadastros() {
         <label>CPF <span class="ajuda">Para entrar com gov.br; guardado só como código</span><input name="cpf" inputmode="numeric"></label>
         <label class="opcao largo"><input type="checkbox" name="acreditado"> Organismo de inspeção acreditado (art. 32, parágrafo único)</label>
         <div class="acoes largo"><button type="submit" class="botao">Cadastrar usuário</button></div><p class="erro-campo largo"></p></form></section></div>
+    <section class="bloco"><h2>Verificadores credenciados</h2>
+      <p class="memoria">Confira cada acreditação na fonte (por exemplo, a consulta pública do Inmetro) e registre o parecer. Acreditação vencida impede o organismo de assumir inventários.</p>
+      ${acreds.length ? `<div class="rolagem"><table><thead><tr><th>Organismo</th><th>Validade</th><th>Situação</th><th></th></tr></thead><tbody>${acreds.map((a) => linhaAcred(a, true)).join("")}</tbody></table></div>` : `<p class="vazio">Nenhum pedido de credenciamento.</p>`}</section>
     ${cx ? secaoEmails(cx) : ""}
     <section class="bloco"><h2>Fatores de emissão</h2>
       <p class="memoria">Publicar um valor novo cria outra versão. A anterior é preservada e continua ligada aos inventários que a usaram.</p>
@@ -1140,6 +1182,14 @@ async function telaCadastros() {
       if (producao()) telaCadastros();
     } catch (e) { avisar(e.message, true); }
   }));
+  conteudo.querySelectorAll("[data-baixar]").forEach((b) => (b.onclick = () => baixar(`/anexos/${b.dataset.baixar}`, b.dataset.nome).catch((e) => avisar(e.message, true))));
+  conteudo.querySelectorAll(".f-anal").forEach((f) => {
+    f.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => (f.dataset.acao = b.value)));
+    aoEnviar(f, async (d) => {
+      await api("POST", `/acreditacoes/${f.dataset.id}/analise`, { aprovar: f.dataset.acao === "sim", parecer: d.parecer });
+      avisar(f.dataset.acao === "sim" ? "Credenciamento aprovado." : "Credenciamento indeferido."); telaCadastros();
+    });
+  });
   conteudo.querySelectorAll("[data-reenviar]").forEach((b) => (b.onclick = async () => {
     try { await api("POST", `/emails/${b.dataset.reenviar}/reenvio`); avisar("E-mail devolvido à fila de envio."); telaCadastros(); }
     catch (e) { avisar(e.message, true); }
@@ -1315,8 +1365,15 @@ async function telaPedido(id) {
     <section class="bloco"><h2>Próxima etapa</h2>${acao || `<p class="vazio">${p.status === "pago" ? "Despesa concluída." : p.status === "cancelado" ? "Pedido encerrado." : "Aguardando outra parte."}</p>`}
       ${cancelavel ? `<form id="f-canc" class="grade" style="margin-top:1rem"><label class="largo">Motivo do cancelamento${p.status === "empenhado" ? ` <span class="ajuda">Anule também o empenho no sistema financeiro.</span>` : ""}<input name="motivo" required></label>
         <div class="acoes largo"><button type="submit" class="botao perigo">Cancelar pedido</button></div><p class="erro-campo largo"></p></form>` : ""}</section></div>
+    ${secaoRegistroPedido(p, doOrgao && pp === "fiscal")}
     ${secaoPncpPedido(p, doOrgao && pp === "elaborador")}`;
   const recarregar = () => telaPedido(id);
+  conteudo.querySelectorAll("[data-baixar]").forEach((b) => (b.onclick = () => baixar(`/anexos/${b.dataset.baixar}`, b.dataset.nome).catch((e) => avisar(e.message, true))));
+  aoEnviar($("#f-conf"), async (d, form) => {
+    const evid = await anexoDoCampo(form);
+    await api("POST", `/pedidos/${id}/conferencia`, { resultado: d.resultado, observacao: d.observacao || null, evidencia_anexo_id: evid });
+    avisar(d.resultado === "conforme" ? "Conferência registrada: pode atestar a liquidação." : "Divergência registrada: a liquidação fica bloqueada."); recarregar();
+  });
   aoEnviar($("#f-pncp"), async (d) => { await api("POST", `/pedidos/${id}/pncp`, d); avisar("Contratação conferida no PNCP e vinculada ao pedido."); recarregar(); });
   $("#b-tr").onclick = () => abrirRelatorio(`/pedidos/${id}/minuta-tr.html`).catch((e) => avisar(e.message, true));
   $("#b-tr-docx").onclick = () => baixar(`/pedidos/${id}/tr.docx`, `termo-de-referencia-pedido-${id}.docx`).catch((e) => avisar(e.message, true));
@@ -1333,6 +1390,23 @@ async function telaPedido(id) {
     if (!(await confirmar(`Entregar ${t(p.quantidade)} créditos?`, `Os créditos serão transferidos para a conta de ${p.orgao} no registro. Não é possível desfazer.`, "Entregar créditos"))) return;
     try { await api("POST", `/pedidos/${id}/entrega`); avisar("Créditos entregues."); recarregar(); } catch (e) { avisar(e.message, true); }
   };
+}
+
+function secaoRegistroPedido(p, fiscal) {
+  const r = p.registro_lote, c = p.conferencia;
+  if (!r) return "";
+  const res = c ? `<p><span class="situacao ${c.resultado === "conforme" ? "aprovado" : "devolvido"}">${c.resultado === "conforme" ? "Conforme" : "Divergente"}</span>
+      conferido em ${data(c.conferido_em)}${c.observacao ? ` · ${esc(c.observacao)}` : ""} · <button type="button" class="link" data-baixar="${c.evidencia_anexo_id}" data-nome="evidencia-registro.pdf">evidência</button></p>` : "";
+  return `<section class="bloco"><h2>Conferência no registro da certificadora</h2>
+    <dl class="ficha"><div><dt>Lote no registro</dt><dd><a href="${esc(r.registro_url)}" target="_blank" rel="noopener">${esc(r.certificadora)} · abrir o registro</a></dd></div>
+      <div><dt>Bloco de séries</dt><dd class="mono">${esc(r.serie_bloco)}</dd></div></dl>
+    ${res || (p.status === "entregue" ? `<p class="memoria">Os registros das certificadoras não têm consulta automática aberta: o fiscal confere o lote no site e registra o resultado com uma evidência (PDF ou imagem da página). Sem conferência "conforme", a liquidação fica bloqueada.</p>` : "")}
+    ${fiscal && p.status === "entregue" ? `<form id="f-conf" class="grade">
+      <label>Resultado<select name="resultado"><option value="conforme">Conforme: séries, quantidade e titularidade conferem</option><option value="divergente">Divergente</option></select></label>
+      <label>Evidência da consulta (PDF ou imagem)<input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required></label>
+      <label class="largo">Observação <span class="ajuda">Obrigatória em caso de divergência</span><input name="observacao"></label>
+      <div class="acoes largo"><button type="submit" class="botao secundario">Registrar conferência</button></div><p class="erro-campo largo"></p></form>` : ""}
+  </section>`;
 }
 
 function secaoPncpPedido(p, podeEditar) {

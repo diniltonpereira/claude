@@ -1,6 +1,6 @@
 # Checklist de lançamento do piloto
 
-50 itens em 7 fases, para colocar o Lastro Carbono no ar com uma prefeitura. Cada item indica o responsável e, quando há, a seção do `docs/IMPLANTACAO.md` com o passo a passo.
+52 itens em 7 fases, para colocar o Lastro Carbono no ar com uma prefeitura. Cada item indica o responsável e, quando há, a seção do `docs/IMPLANTACAO.md` com o passo a passo.
 
 **Caminho crítico:** as credenciais do gov.br e do ITI (fase 2) têm prazo e dependem do domínio oficial e da integração com o Login Único. Peça na semana 1.
 
@@ -61,6 +61,7 @@ O que precisa estar na plataforma antes do primeiro lançamento.
 - [ ] **Cadastrar os usuários e enviar os convites** — _Gestão do piloto_. Servidores com CPF (entram pelo gov.br); empresas por e-mail, com convite válido por 72 horas. (IMPLANTACAO §2.4)
 - [ ] **Cadastrar unidades, prédios e instalações** — _Gestão do piloto_. Com o nº da instalação na CEMIG (UC) em cada prédio, para as faturas caírem na unidade certa. (IMPLANTACAO §8)
 - [ ] **Conferir e publicar os fatores de emissão vigentes** — _Gestão do piloto_. O fator do SIN carregado vem marcado "CONFERIR ano vigente": publique o valor oficial do MCTI do ano-base. (IMPLANTACAO §2.4)
+- [ ] **Credenciar o organismo verificador na plataforma** — _Gestão do piloto_. O verificador envia a acreditação (Inmetro/Cgcre, nº, normas e validade) em "Minha conta"; a administração confere na fonte e aprova. Sem acreditação vigente, ele não assume inventários. (IMPLANTACAO §15)
 - [ ] **Cadastrar os contratos das terceirizadas** — _Fiscais de contrato_. Com o dia limite de lançamento e a cláusula de relato, e convidar as empresas.
 - [ ] **Carregar as faturas de energia do ano-base** — _Gestão do piloto_. PDF com conferência linha a linha ou planilha (CSV ou XLSX). (IMPLANTACAO §8)
 
@@ -76,6 +77,7 @@ Cada teste com o resultado esperado. Registre a data e quem testou.
 - [ ] **Receber convite e lembrete por e-mail** — _TI_. Esperado: chegam na caixa de entrada, não no spam, com o remetente do órgão. (IMPLANTACAO §10)
 - [ ] **Assinar um contrato de teste** — _Usuários_. Esperado: conta bronze barrada com o link oficial; conta prata assina; PDF e .p7s validados em validar.staging.iti.br. (IMPLANTACAO §12)
 - [ ] **Vincular um pedido e registrar uma fonte de preço** — _Gestão do piloto_. Esperado: contratação real do órgão conferida no PNCP; fonte de outro ente aparece no ETP. (IMPLANTACAO §14)
+- [ ] **Escriturar e conferir um lote de crédito voluntário** — _Fiscais de contrato_. Esperado: série repetida recusada; liquidação bloqueada até o fiscal registrar a conferência "conforme" com evidência; pacote do verificador confere com sha256sum. (IMPLANTACAO §15)
 - [ ] **Restaurar um backup em servidor de teste** — _TI_. Esperado: manifesto, integridade e cadeia do livro-razão conferidos. (IMPLANTACAO §4.1)
 - [ ] **Gravar os vídeos de homologação do gov.br** — _TI_. Login Único e assinatura, com a barra de endereços visível: conta bronze, conta prata, download do PDF e dos .p7s e logout. (IMPLANTACAO §12)
 

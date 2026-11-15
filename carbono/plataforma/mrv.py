@@ -320,7 +320,8 @@ def _checar_segregacao(con, u, inv, acao) -> None:
     if u["id"] == inv["elaborado_por"]:
         raise NaoAutorizado("Quem elaborou não pode verificar nem moderar.")
     if u["papel"] == "verificador":
-        if not u["acreditado"]:
+        from .creditos import verificador_habilitado
+        if not verificador_habilitado(con, u):
             raise NaoAutorizado("Verificador precisa ser organismo de inspeção acreditado "
                                 "(Lei 15.042/2024, art. 32, parágrafo único).")
         if u["organizacao_id"] == inv["organizacao_id"]:

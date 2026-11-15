@@ -24,8 +24,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (acesso, anexos, antivirus, assinatura, auditoria, compensacao, envio, faturas, geo, modelos, pncp, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
-               terceirizadas)
+from . import (acesso, anexos, antivirus, assinatura, auditoria, compensacao, creditos, envio, faturas, geo, modelos, pncp, fatores, marketplace, mrv, painel, projetos, registro, relatorio,
+               terceirizadas, verificacao)
 from .banco import ErroNegocio, NaoAutorizado, NaoEncontrado, buscar, conectar, transacao
 from .enquadramento import (LIMIAR_CONCILIACAO, LIMIAR_MONITORAMENTO, calendario,
                             checar_projeto_publico, checar_reparticao_comunidade, enquadrar_operador,
@@ -161,7 +161,29 @@ class EmissaoIn(BaseModel):
     serial: str = Field(min_length=3)
     certificadora: str | None = None
     certificado_anexo_id: int | None = None
+    registro_url: str | None = Field(default=None, max_length=500)
+    serie_bloco: str | None = Field(default=None, max_length=300)
     chave_idempotencia: str | None = None
+
+
+class ConferenciaIn(BaseModel):
+    resultado: Literal["conforme", "divergente"]
+    evidencia_anexo_id: int
+    observacao: str | None = Field(default=None, max_length=1000)
+
+
+class AcreditacaoIn(BaseModel):
+    acreditador: str = Field(min_length=2, max_length=120)
+    numero: str = Field(min_length=1, max_length=60)
+    normas: str = Field(min_length=3, max_length=200)
+    escopo: str | None = Field(default=None, max_length=300)
+    valido_ate: date
+    documento_anexo_id: int
+
+
+class AnaliseAcreditacaoIn(BaseModel):
+    aprovar: bool
+    parecer: str = Field(min_length=5, max_length=1000)
 
 
 class TransferenciaIn(BaseModel):
@@ -1061,6 +1083,13 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
         return Response(conteudo, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
+    @app.get("/inventarios/{iid}/pacote-verificacao.zip")
+    def pacote_verificacao(iid: int, u=Depends(usuario), c=Depends(db)):
+        """Pacote de evidências para o organismo verificador (ISO 14064-3)."""
+        conteudo, nome = verificacao.pacote(c, u["id"], iid)
+        return Response(conteudo, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
     @app.get("/inventarios/{iid}/relatorio.docx")
     def rel_docx(iid: int, u=Depends(usuario), c=Depends(db)):
         inv = _inv_visivel(c, u, iid)
@@ -1211,6 +1240,26 @@ def criar_app(caminho_banco: str | None = None, modo: str | None = None) -> Fast
     @app.get("/pedidos/{pid}")
     def ver_pedido(pid: int, u=Depends(usuario), c=Depends(db)):
         return marketplace.ver_pedido(c, u["id"], pid)
+
+    @app.post("/pedidos/{pid}/conferencia", status_code=201)
+    def conferir_registro(pid: int, d: ConferenciaIn, u=Depends(usuario), c=Depends(db)):
+        """O fiscal registra a conferência do lote no registro público, com evidência."""
+        return {"id": creditos.conferir(c, u["id"], pid, **d.model_dump())}
+
+    @app.get("/acreditacoes")
+    def listar_acreditacoes(u=Depends(usuario), c=Depends(db)):
+        return creditos.acreditacoes(c, u["id"])
+
+    @app.post("/acreditacoes", status_code=201)
+    def solicitar_acreditacao(d: AcreditacaoIn, u=Depends(usuario), c=Depends(db)):
+        dados = d.model_dump()
+        dados["valido_ate"] = d.valido_ate.isoformat()
+        return {"id": creditos.solicitar_acreditacao(c, u["id"], **dados)}
+
+    @app.post("/acreditacoes/{aid}/analise")
+    def analisar_acreditacao(aid: int, d: AnaliseAcreditacaoIn, u=Depends(usuario), c=Depends(db)):
+        creditos.analisar_acreditacao(c, u["id"], aid, **d.model_dump())
+        return {"ok": True}
 
     @app.post("/pedidos/{pid}/pncp")
     def vincular_pncp(pid: int, d: PncpIn, u=Depends(usuario), c=Depends(db)):

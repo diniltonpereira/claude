@@ -1,10 +1,11 @@
 """Compra de créditos: credenciamento aberto, catálogo e rito da despesa pública."""
+import zlib
 from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
 
-from plataforma import anexos, marketplace as mk, mrv, registro
+from plataforma import anexos, creditos, marketplace as mk, mrv, registro
 from plataforma.api import criar_app
 from plataforma.banco import ErroNegocio, NaoAutorizado, conectar
 
@@ -47,11 +48,18 @@ def credenciar(s):
     return cid
 
 
+def bloco(serial, qtd, safra):
+    """Série fictícia no formato da Verra, distinta para cada serial interno."""
+    url, b = creditos.serie_verra(zlib.crc32(serial.encode()) % 10_000_000 * 1000 + 1, qtd, safra,
+                                  projeto=zlib.crc32(serial.encode()) % 9000 + 1000)
+    return {"registro_url": url, "serie_bloco": b}
+
+
 def lote_voluntario(s, qtd=1000, serial="VCS-1"):
     conta = registro.abrir_conta(s["c"], s["vend_org"])
     return registro.emitir(s["c"], s["reg"], conta_id=conta, tipo_ativo="VOLUNTARIO", projeto="Biogás MG",
                            metodologia="ACM0001", certificadora="Verra", certificado_anexo_id=pdf(s["c"], s["reg"]),
-                           safra=2025, quantidade=qtd, serial=serial)["lote_id"]
+                           safra=2025, quantidade=qtd, serial=serial, **bloco(serial, qtd, 2025))["lote_id"]
 
 
 def ofertar(s, qtd=500, preco=40.0, uf="MG", categoria="residuos_biogas", lote=None):
@@ -149,6 +157,18 @@ def test_fluxo_completo_na_ordem_legal(s):
         mk.liquidar(c, s["fiscal"], pid, nota_fiscal="NF 77", conferido=False)
     with pytest.raises(ErroNegocio, match="entregue"):
         mk.registrar_pagamento(c, s["elab"], pid, referencia="OB 555", data="2026-12-01")
+    # crédito voluntário: o fiscal confere o lote no registro antes de liquidar
+    with pytest.raises(ErroNegocio, match="confira o lote no registro"):
+        mk.liquidar(c, s["fiscal"], pid, nota_fiscal="NF 77", conferido=True)
+    with pytest.raises(NaoAutorizado):
+        creditos.conferir(c, s["elab"], pid, resultado="conforme", evidencia_anexo_id=pdf(c, s["elab"]))
+    with pytest.raises(ErroNegocio, match="Descreva"):
+        creditos.conferir(c, s["fiscal"], pid, resultado="divergente", evidencia_anexo_id=pdf(c, s["fiscal"], "t"))
+    creditos.conferir(c, s["fiscal"], pid, resultado="divergente", observacao="Lote não aparece aposentado",
+                      evidencia_anexo_id=pdf(c, s["fiscal"], "d"))
+    with pytest.raises(ErroNegocio, match="divergência"):
+        mk.liquidar(c, s["fiscal"], pid, nota_fiscal="NF 77", conferido=True)
+    creditos.conferir(c, s["fiscal"], pid, resultado="conforme", evidencia_anexo_id=pdf(c, s["fiscal"], "ok"))
     mk.liquidar(c, s["fiscal"], pid, nota_fiscal="NF 77", conferido=True)
     mk.registrar_pagamento(c, s["elab"], pid, referencia="2026OB000555", data="2026-12-01")
     p = mk.ver_pedido(c, s["elab"], pid)
@@ -231,7 +251,7 @@ def test_api_do_pedido(tmp_path):
     lote = cli.post("/registro/emissoes", headers=H(reg), json={
         "conta_id": vend_org["conta_id"], "tipo_ativo": "VOLUNTARIO", "projeto": "P", "metodologia": "M",
         "safra": 2025, "quantidade": 100, "serial": "VCS-9", "certificadora": "Verra",
-        "certificado_anexo_id": cert}).json()["lote_id"]
+        "certificado_anexo_id": cert, **bloco("VCS-9", 100, 2025)}).json()["lote_id"]
     oferta = cli.post("/ofertas", headers=H(vend), json={"lote_id": lote, "categoria": "energia", "municipio": "Janaúba",
                                                          "uf": "MG", "preco_unitario": 35, "quantidade": 100}).json()["id"]
     assert cli.get("/ofertas", headers=H(elab), params={"uf": "MG"}).json()[0]["id"] == oferta

@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from plataforma import anexos, auditoria, compensacao, fatores, mrv, painel, registro, relatorio, terceirizadas
+from plataforma import anexos, auditoria, compensacao, creditos, fatores, mrv, painel, registro, relatorio, terceirizadas
 from plataforma.api import criar_app
 from plataforma.banco import EsquemaIncompativel, ErroNegocio, NaoAutorizado, NaoEncontrado, conectar
 
@@ -292,7 +292,8 @@ def test_credito_voluntario_exige_certificado_e_aposentadoria_externa(s):
                         safra=2025, quantidade=100, serial="V1", certificadora="Verra")
     lote = registro.emitir(c, s["reg"], conta_id=s["conta"], tipo_ativo="VOLUNTARIO", projeto="P",
                            metodologia="M", safra=2025, quantidade=100, serial="V1", certificadora="Verra",
-                           certificado_anexo_id=pdf(s, s["reg"]))["lote_id"]
+                           certificado_anexo_id=pdf(s, s["reg"]),
+                           **dict(zip(("registro_url", "serie_bloco"), creditos.serie_verra(1, 100, 2025, 1529))))["lote_id"]
     inv = mrv.criar_inventario(c, s["elab"], s["org"], 2025)
     mrv.adicionar_atividade(c, s["elab"], inv, descricao="glp", fator="glp", quantidade=10_000,
                             anexo_id=pdf(s, s["elab"]))
