@@ -1,0 +1,24 @@
+etiqueta: Eficiência · Análise Envoltória de Dados
+livro: Novo Marco Legal do Saneamento e seus impactos na vida dos cidadãos
+capa:
+  titulo: O prestador parece eficiente. Até as perdas de água entrarem na conta.
+  subtitulo: O que a escolha dos indicadores faz com o diagnóstico.
+slides:
+- chamada: O ESTUDO
+  titulo: Januária e Pirapora (MG)
+  texto: Com indicadores tradicionais, os serviços pareceram eficientes ou de eficiência fraca. Com as perdas na análise, nenhuma unidade alcançou o patamar de eficiência. (p. 148)
+- chamada: A REPLICAÇÃO
+  titulo: 84 municípios do Norte de Minas
+  texto: Mesma lógica, com dados do SINISA 2023.
+- numero: 0,06
+  titulo: Modelo tradicional
+  texto: 'Correlação praticamente nula entre eficiência e perdas: a avaliação é cega para a água desperdiçada. (p. 152)'
+- numero: −0,40
+  titulo: Com as perdas na conta
+  texto: 'A relação fica negativa e significativa: quanto maior a perda, menor a eficiência. (p. 152)'
+- chamada: A LIÇÃO
+  titulo: A escolha dos indicadores é uma variável regulatória
+  texto: O mesmo método pode produzir diagnósticos opostos. A DEA mede eficiência relativa e não substitui metas nem a auditoria dos dados.
+fechamento:
+  titulo: Medir para regular
+  texto: A Parte V do livro traz o estudo completo, com tabelas e figuras.

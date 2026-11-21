@@ -1,0 +1,22 @@
+etiqueta: Norte de Minas · SINISA 2023
+livro: Novo Marco Legal do Saneamento e seus impactos na vida dos cidadãos
+capa:
+  titulo: 'Esgoto no Norte de Minas: a meta de 90% ainda está longe'
+  subtitulo: O retrato dos dados do SINISA 2023.
+slides:
+- numero: '33'
+  titulo: municípios sem nenhum dado de esgoto
+  texto: Dos 89 municípios da região, só 56 aparecem na base de esgoto do SINISA 2023.
+- numero: 39,3%
+  titulo: é a mediana de atendimento
+  texto: Coleta e tratamento de esgoto, entre os 52 municípios com indicadores de domicílios calculados.
+- numero: '0'
+  titulo: municípios na meta de 90%
+  texto: Nenhum alcança a meta de 2033, e 15 estão abaixo de 30%.
+- chamada: O DETALHE
+  titulo: Sem dados, não há regulação
+  texto: Em pequenos prestadores, a falta de informação é a forma mais comum de assimetria. A regulação precisa ser progressiva, com metas de melhoria dos dados.
+fechamento:
+  titulo: 'Fonte: capítulos 21 e 22'
+  texto: Os números estão na seção 21.5, p. 155.
+  nota: Dados do SINISA 2023.

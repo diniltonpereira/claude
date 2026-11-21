@@ -1,0 +1,30 @@
+etiqueta: Resíduos sólidos · Cobrança
+livro: Novo Marco Legal do Saneamento e seus impactos na vida dos cidadãos
+capa:
+  titulo: Por que tantos municípios ainda não cobram pelo lixo?
+  subtitulo: 8 estratégias para reduzir o custo político da cobrança.
+slides:
+- chamada: A REGRA
+  titulo: A cobrança é obrigatória
+  texto: A Lei nº 14.026/2020 exige instrumento de cobrança pelo manejo de resíduos sólidos. A omissão configura renúncia de receita.
+- chamada: O MEDO
+  titulo: O receio do custo eleitoral
+  texto: Explica boa parte da resistência dos gestores, sobretudo em municípios de pequeno porte.
+- numero: '01'
+  titulo: Tornar o custo visível
+  texto: Publicar quanto o município já gasta por domicílio e de qual orçamento sai o dinheiro.
+- numero: '02'
+  titulo: Proteger os mais pobres
+  texto: Tarifa social ou isenção para famílias do Cadastro Único, como admite a NR nº 1 da ANA.
+- numero: '03'
+  titulo: Implantar gradualmente
+  texto: Escalonar em dois ou três exercícios, começando com valores menores.
+- numero: '04'
+  titulo: Cobrar junto com a água
+  texto: 'Na fatura do serviço de água, com anuência do prestador: menos custo e menos inadimplência.'
+- numero: '05'
+  titulo: Decidir em conjunto
+  texto: Aprovar a cobrança de forma coordenada no consórcio ou bloco regional dilui o custo político.
+fechamento:
+  titulo: E mais três estratégias
+  texto: Escolher o momento, vincular a receita e mostrar resultados, usar âncoras externas. Quadro 22.1, p. 160.
