@@ -1,0 +1,23 @@
+etiqueta: eBook grátis por 3 dias
+livro: 'Cooperar para Desenvolver'
+capa:
+  imagem: ../../ferramentas/capas/cooperar-para-desenvolver.jpg
+  titulo: 'De 5 a 7 de dezembro, grátis no Kindle'
+  subtitulo: '2ª edição revista e atualizada.'
+slides:
+- chamada: NO LIVRO
+  titulo: Consórcios na prática
+  texto: Como criar, estruturar e governar um consórcio público pela Lei 11.107/2005 e o Decreto 6.017/2007.
+- chamada: NO LIVRO
+  titulo: Modelos prontos
+  texto: Minutas comentadas de protocolo de intenções e contrato de rateio, cláusulas-modelo e checklists.
+- chamada: NO LIVRO
+  titulo: Recursos e governança
+  texto: Contratos de programa, captação de recursos e prevenção do aparelhamento político.
+- chamada: COMO BAIXAR
+  titulo: Grátis só nesses 3 dias
+  texto: 'Busque "Cooperar para Desenvolver" na Amazon e baixe o eBook por R$ 0,00. Leia no app Kindle gratuito.'
+fechamento:
+  titulo: Sozinho, o município se torna pequeno. Unido, ele se torna região.
+  texto: Para prefeitos, gestores, procuradores, vereadores e servidores.
+  nota: Promoção válida de 5 a 7/12 no horário do Pacífico (EUA).

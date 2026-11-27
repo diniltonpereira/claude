@@ -1,0 +1,23 @@
+etiqueta: eBook grátis por 3 dias
+livro: Conexões que Transformam
+capa:
+  imagem: ../../ferramentas/capas/conexoes-que-transformam.jpg
+  titulo: 'De 8 a 10 de dezembro, grátis no Kindle'
+  subtitulo: 'Conexões que Transformam: a arte das relações humanas no mundo profissional.'
+slides:
+- chamada: PARTE I
+  titulo: O mundo de dentro
+  texto: Autoconhecimento, inteligência emocional e a anatomia da síndrome da autossuficiência, com autoteste.
+- chamada: PARTE II
+  titulo: O encontro
+  texto: 'Escuta, comunicação, conflitos e conversas difíceis: as habilidades do dia a dia.'
+- chamada: PARTES III E IV
+  titulo: O poder, o serviço e o nós
+  texto: Autoridade, caráter de quem lidera, equipes e confiança.
+- chamada: COMO BAIXAR
+  titulo: Grátis só nesses 3 dias
+  texto: 'Busque "Conexões que Transformam" na Amazon e baixe o eBook por R$ 0,00. Leia no app Kindle gratuito.'
+fechamento:
+  titulo: Marque um líder que precisa ler isto
+  texto: Gestores, profissionais da saúde, servidores públicos e educadores.
+  nota: Promoção válida de 8 a 10/12 no horário do Pacífico (EUA).
